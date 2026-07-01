@@ -18,6 +18,8 @@ const generateAudioBtn = document.getElementById("generate-audio-btn");
 const nextBtn = document.getElementById("next-btn");
 const imageStep = document.getElementById("image-step");
 const imageGrid = document.getElementById("image-grid");
+const uploadInput = document.getElementById("upload-input");
+const uploadBtn = document.getElementById("upload-btn");
 const regenerateImagesBtn = document.getElementById("regenerate-images-btn");
 const confirmImagesBtn = document.getElementById("confirm-images-btn");
 const montageBtn = document.getElementById("montage-btn");
@@ -286,6 +288,17 @@ nextBtn.addEventListener("click", () => {
 });
 
 regenerateImagesBtn.addEventListener("click", generateImages);
+
+uploadBtn.addEventListener("click", () => uploadInput.click());
+
+uploadInput.addEventListener("change", () => {
+  [...uploadInput.files].forEach((file) => {
+    const url = URL.createObjectURL(file);
+    selectedImages.add(url);
+    addImageCard(url);
+  });
+  uploadInput.value = "";
+});
 
 confirmImagesBtn.addEventListener("click", () => {
   if (selectedImages.size === 0) {

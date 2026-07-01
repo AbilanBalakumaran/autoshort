@@ -197,6 +197,12 @@ label {
   margin-top: 0;
 }
 
+#upload-btn {
+  width: 100%;
+  margin-bottom: 16px;
+  background: #333;
+}
+
 .image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
