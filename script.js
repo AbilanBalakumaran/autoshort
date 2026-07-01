@@ -23,6 +23,7 @@ initSettings();
 
 function initTabs() {
   const tabButtons = document.querySelectorAll(".tab-btn");
+  const mainEl = document.querySelector("main");
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       tabButtons.forEach((b) => b.classList.remove("active"));
@@ -30,6 +31,7 @@ function initTabs() {
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.hidden = panel.id !== `tab-${btn.dataset.tab}`;
       });
+      mainEl.classList.toggle("wide", btn.dataset.tab === "settings");
     });
   });
 }
