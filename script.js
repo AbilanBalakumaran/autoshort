@@ -5,6 +5,34 @@ const VOICE_STORAGE_KEY = "autoshort-voice";
 const DEFAULT_DURATION = 16;
 const WORDS_PER_SECOND = 35 / 16;
 
+const ICONS = {
+  speaker:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>',
+  film:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><rect x="3" y="11" width="18" height="10" rx="2"/></svg>',
+  folder:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>',
+  refresh:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  download:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  grip:
+    '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
+  chevronRight:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+  copy:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  swap:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+};
+
+function iconLabel(iconName, label) {
+  return `<span class="icon">${ICONS[iconName]}</span><span>${label}</span>`;
+}
+
 const form = document.getElementById("prompt-form");
 const promptInput = document.getElementById("prompt");
 const resultSection = document.getElementById("result");
@@ -29,6 +57,12 @@ const montagePreview = document.getElementById("montage-preview");
 const montageDownload = document.getElementById("montage-download");
 const timelineStep = document.getElementById("timeline-step");
 const timelineList = document.getElementById("timeline-list");
+const metadataStep = document.getElementById("metadata-step");
+const titlesList = document.getElementById("titles-list");
+const descriptionOutput = document.getElementById("description-output");
+const tagsOutput = document.getElementById("tags-output");
+const copyDescriptionBtn = document.getElementById("copy-description-btn");
+const copyTagsBtn = document.getElementById("copy-tags-btn");
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
@@ -49,8 +83,25 @@ let currentRealEntities = [];
 let selectedImages = []; // ordered array of image URLs, order = order in the video
 let defaultTemplate = "";
 
+initButtons();
 initTabs();
 initSettings();
+
+function initButtons() {
+  generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio");
+  nextBtn.innerHTML = `<span>Suivant</span><span class="icon">${ICONS.chevronRight}</span>`;
+  uploadBtn.innerHTML = iconLabel("folder", "Ajouter depuis ma galerie");
+  regenerateImagesBtn.innerHTML = iconLabel("refresh", "Régénérer");
+  montageBtn.innerHTML = iconLabel("film", "Générer le montage");
+  montageDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
+  copyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
+  copyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
+  updateConfirmLabel();
+}
+
+function updateConfirmLabel() {
+  confirmImagesBtn.textContent = `Valider la sélection (${selectedImages.length})`;
+}
 
 function initTabs() {
   const tabButtons = document.querySelectorAll(".tab-btn");
@@ -113,7 +164,7 @@ function addVoiceCard(voice) {
   const previewBtn = document.createElement("button");
   previewBtn.type = "button";
   previewBtn.className = "voice-preview-btn";
-  previewBtn.textContent = "▶";
+  previewBtn.innerHTML = ICONS.play;
   previewBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     playVoicePreview(voice.voice_id, previewBtn);
@@ -133,7 +184,6 @@ function addVoiceCard(voice) {
 
 async function playVoicePreview(voiceId, btn) {
   btn.disabled = true;
-  btn.textContent = "…";
   try {
     const res = await fetch(`${WORKER_URL}/generate-audio`, {
       method: "POST",
@@ -149,7 +199,6 @@ async function playVoicePreview(voiceId, btn) {
     speakWithBrowser(PREVIEW_TEXT);
   } finally {
     btn.disabled = false;
-    btn.textContent = "▶";
   }
 }
 
@@ -196,6 +245,8 @@ clearBtn.addEventListener("click", () => {
   timelineList.innerHTML = "";
   montageBtn.hidden = true;
   montageResult.hidden = true;
+  metadataStep.hidden = true;
+  updateConfirmLabel();
   promptInput.focus();
 });
 
@@ -215,10 +266,12 @@ form.addEventListener("submit", async (e) => {
   imageStep.hidden = true;
   montageBtn.hidden = true;
   montageResult.hidden = true;
+  metadataStep.hidden = true;
   selectedImages = [];
   imageGrid.innerHTML = "";
   timelineStep.hidden = true;
   timelineList.innerHTML = "";
+  updateConfirmLabel();
 
   try {
     const template = localStorage.getItem(TEMPLATE_STORAGE_KEY) || undefined;
@@ -304,6 +357,7 @@ uploadInput.addEventListener("change", () => {
     addImageCard(url);
   });
   uploadInput.value = "";
+  updateConfirmLabel();
 });
 
 confirmImagesBtn.addEventListener("click", () => {
@@ -319,6 +373,19 @@ confirmImagesBtn.addEventListener("click", () => {
 });
 
 montageBtn.addEventListener("click", generateMontage);
+
+copyDescriptionBtn.addEventListener("click", () => copyToClipboard(descriptionOutput.value, copyDescriptionBtn, "Copier la description"));
+copyTagsBtn.addEventListener("click", () => copyToClipboard(tagsOutput.value, copyTagsBtn, "Copier les tags"));
+
+async function copyToClipboard(text, btn, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.innerHTML = iconLabel("copy", "Copié !");
+    setTimeout(() => (btn.innerHTML = iconLabel("copy", label)), 1500);
+  } catch {
+    status.textContent = "Impossible de copier automatiquement, sélectionne le texte manuellement.";
+  }
+}
 
 async function generateImages() {
   regenerateImagesBtn.disabled = true;
@@ -359,6 +426,7 @@ async function generateImages() {
       if (!selectedImages.includes(src)) addImageCard(src);
     });
 
+    updateConfirmLabel();
     if (!timelineStep.hidden) renderTimeline();
     status.textContent = "";
   } catch (err) {
@@ -393,6 +461,7 @@ function addImageCard(src) {
       selectedImages.push(src);
       card.classList.add("selected");
     }
+    updateConfirmLabel();
     if (!timelineStep.hidden) renderTimeline();
   });
 
@@ -406,6 +475,8 @@ function syncGridSelection() {
   });
 }
 
+let dragSrcIndex = null;
+
 function renderTimeline() {
   timelineList.innerHTML = "";
 
@@ -416,6 +487,25 @@ function renderTimeline() {
   selectedImages.forEach((src, index) => {
     const row = document.createElement("div");
     row.className = "timeline-row";
+    row.draggable = true;
+
+    row.addEventListener("dragstart", () => {
+      dragSrcIndex = index;
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (e) => e.preventDefault());
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (dragSrcIndex === null || dragSrcIndex === index) return;
+      moveImage(dragSrcIndex, index);
+      dragSrcIndex = null;
+    });
+
+    const handle = document.createElement("div");
+    handle.className = "timeline-handle";
+    handle.innerHTML = ICONS.grip;
+    handle.title = "Glisser pour réordonner";
 
     const thumb = document.createElement("img");
     thumb.src = src;
@@ -434,34 +524,27 @@ function renderTimeline() {
     const controls = document.createElement("div");
     controls.className = "timeline-controls";
 
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.textContent = "↑";
-    upBtn.disabled = index === 0;
-    upBtn.addEventListener("click", () => moveImage(index, index - 1));
-
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.textContent = "↓";
-    downBtn.disabled = index === selectedImages.length - 1;
-    downBtn.addEventListener("click", () => moveImage(index, index + 1));
-
     const replaceBtn = document.createElement("button");
     replaceBtn.type = "button";
-    replaceBtn.textContent = "🔄";
+    replaceBtn.className = "timeline-action-btn";
+    replaceBtn.innerHTML = ICONS.swap;
+    replaceBtn.title = "Remplacer l'image";
     replaceBtn.addEventListener("click", () => replaceImage(index));
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
-    removeBtn.textContent = "✕";
+    removeBtn.className = "timeline-action-btn";
+    removeBtn.innerHTML = ICONS.trash;
+    removeBtn.title = "Retirer l'image";
     removeBtn.addEventListener("click", () => {
       selectedImages.splice(index, 1);
       renderTimeline();
       syncGridSelection();
+      updateConfirmLabel();
     });
 
-    controls.append(upBtn, downBtn, replaceBtn, removeBtn);
-    row.append(thumb, info, controls);
+    controls.append(replaceBtn, removeBtn);
+    row.append(handle, thumb, info, controls);
     timelineList.appendChild(row);
   });
 }
@@ -528,18 +611,91 @@ async function generateMontage() {
       .then((buf) => new AudioContext().decodeAudioData(buf));
 
     status.textContent = "Enregistrement du montage...";
-    const blob = await renderMontage(images, audioBuffer, currentVoiceScript);
+    const webmBlob = await renderMontage(images, audioBuffer, currentVoiceScript);
 
-    montagePreview.src = URL.createObjectURL(blob);
-    montageDownload.href = URL.createObjectURL(blob);
+    let finalBlob = webmBlob;
+    let extension = "webm";
+    try {
+      status.textContent = "Conversion en MP4 (pour la lecture sur mobile)...";
+      finalBlob = await convertToMp4(webmBlob);
+      extension = "mp4";
+    } catch {
+      // Conversion failed (unsupported browser, etc.) — keep the webm file.
+    }
+
+    montagePreview.src = URL.createObjectURL(finalBlob);
+    montageDownload.href = URL.createObjectURL(finalBlob);
+    montageDownload.download = `autoshort.${extension}`;
     montageResult.hidden = false;
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+    status.textContent = "Génération de la fiche technique...";
+    await generateMetadata();
     status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur montage : ${err.message}`;
   } finally {
     montageBtn.disabled = false;
   }
+}
+
+async function generateMetadata() {
+  try {
+    const res = await fetch(`${WORKER_URL}/generate-metadata`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: currentVoiceScript }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Erreur fiche technique");
+    }
+
+    titlesList.innerHTML = "";
+    (data.titles || []).forEach((title) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "title-item";
+      item.textContent = title;
+      item.addEventListener("click", () => copyToClipboard(title, item, title));
+      titlesList.appendChild(item);
+    });
+
+    descriptionOutput.value = data.description || "";
+    tagsOutput.value = data.tags || "";
+    metadataStep.hidden = false;
+  } catch (err) {
+    status.textContent = `Erreur fiche technique : ${err.message}`;
+  }
+}
+
+let ffmpegInstance = null;
+
+async function getFFmpeg() {
+  if (ffmpegInstance) return ffmpegInstance;
+
+  const { FFmpeg } = await import("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
+  const { toBlobURL } = await import("https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js");
+
+  const ffmpeg = new FFmpeg();
+  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+  });
+
+  ffmpegInstance = ffmpeg;
+  return ffmpeg;
+}
+
+async function convertToMp4(webmBlob) {
+  const ffmpeg = await getFFmpeg();
+  const inputData = new Uint8Array(await webmBlob.arrayBuffer());
+  await ffmpeg.writeFile("input.webm", inputData);
+  await ffmpeg.exec(["-i", "input.webm", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "output.mp4"]);
+  const data = await ffmpeg.readFile("output.mp4");
+  return new Blob([data.buffer], { type: "video/mp4" });
 }
 
 function loadImage(src) {

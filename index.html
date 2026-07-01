@@ -30,12 +30,12 @@
         <h2>Script vocal généré</h2>
         <pre id="script-output"></pre>
         <p id="duration-estimate"></p>
-        <button type="button" id="generate-audio-btn">🔊 Générer l'audio</button>
+        <button type="button" id="generate-audio-btn" class="icon-btn"></button>
         <div id="audio-wrapper" hidden>
-          <span class="audio-label">🎙️ Narration</span>
+          <span class="audio-label">Narration</span>
           <audio id="audio-player" controls></audio>
         </div>
-        <button type="button" id="next-btn" hidden>Suivant →</button>
+        <button type="button" id="next-btn" class="icon-btn" hidden></button>
       </section>
 
       <p id="status"></p>
@@ -45,28 +45,47 @@
         <p class="hint">Sélectionne une ou plusieurs images proposées.</p>
 
         <input type="file" id="upload-input" accept="image/*" multiple hidden />
-        <button type="button" id="upload-btn">📁 Ajouter depuis ma galerie</button>
+        <button type="button" id="upload-btn" class="icon-btn"></button>
 
         <div id="image-grid" class="image-grid"></div>
         <div class="button-row">
-          <button type="button" id="regenerate-images-btn">🔄 Régénérer</button>
-          <button type="button" id="confirm-images-btn">Valider la sélection</button>
+          <button type="button" id="regenerate-images-btn" class="icon-btn"></button>
+          <button type="button" id="confirm-images-btn"></button>
         </div>
 
         <section id="timeline-step" hidden>
           <h3>Ordre des images</h3>
-          <p class="hint">Réordonne, retire ou remplace une image, et vois quel passage du texte lui correspond.</p>
+          <p class="hint">Fais glisser une image par sa poignée pour la réordonner, remplace-la ou retire-la — et vois quel passage du texte lui correspond.</p>
           <div id="timeline-list" class="timeline-list"></div>
         </section>
 
-        <button type="button" id="montage-btn" hidden>🎬 Générer le montage</button>
+        <button type="button" id="montage-btn" class="icon-btn" hidden></button>
 
         <canvas id="montage-canvas" width="1080" height="1920" hidden></canvas>
 
         <div id="montage-result" hidden>
           <video id="montage-preview" controls playsinline></video>
-          <a id="montage-download" class="download-link" download="autoshort.webm">⬇️ Télécharger la vidéo</a>
+          <a id="montage-download" class="download-link icon-btn" download="autoshort.mp4"></a>
         </div>
+
+        <section id="metadata-step" hidden>
+          <h3>Fiche technique</h3>
+
+          <label>Titres suggérés</label>
+          <div id="titles-list" class="titles-list"></div>
+
+          <label for="description-output">Description</label>
+          <div class="copy-row">
+            <textarea id="description-output" class="copy-textarea" readonly></textarea>
+            <button type="button" id="copy-description-btn" class="icon-btn"></button>
+          </div>
+
+          <label for="tags-output">Tags YouTube</label>
+          <div class="copy-row">
+            <textarea id="tags-output" class="copy-textarea copy-textarea-small" readonly></textarea>
+            <button type="button" id="copy-tags-btn" class="icon-btn"></button>
+          </div>
+        </section>
       </section>
     </section>
 
