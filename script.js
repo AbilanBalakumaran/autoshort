@@ -737,8 +737,10 @@ function loadScript(src) {
   });
 }
 
-// Loaded as classic UMD <script> tags (not ESM dynamic import) for maximum
-// mobile browser compatibility.
+// All ffmpeg.wasm files are hosted locally (vendor/ffmpeg/) instead of a CDN.
+// The UMD bundle resolves its own worker chunk via document.currentScript.src,
+// so loading it from our own origin makes that chunk same-origin too —
+// avoiding the cross-origin Worker SecurityError that cross-CDN loading hit.
 async function getFFmpeg() {
   if (ffmpegInstance) {
     log("FFmpeg déjà chargé, réutilisation");
@@ -746,34 +748,25 @@ async function getFFmpeg() {
   }
 
   if (!window.FFmpegWASM) {
-    log("Téléchargement de @ffmpeg/ffmpeg (UMD)...");
-    await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js");
+    log("Chargement de @ffmpeg/ffmpeg...");
+    await loadScript("vendor/ffmpeg/ffmpeg.js");
     log("@ffmpeg/ffmpeg chargé");
   }
   if (!window.FFmpegUtil) {
-    log("Téléchargement de @ffmpeg/util (UMD)...");
-    await loadScript("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js");
+    log("Chargement de @ffmpeg/util...");
+    await loadScript("vendor/ffmpeg/ffmpeg-util.js");
     log("@ffmpeg/util chargé");
   }
 
   const { FFmpeg } = window.FFmpegWASM;
-  const { toBlobURL } = window.FFmpegUtil;
 
   const ffmpeg = new FFmpeg();
   ffmpeg.on("log", ({ message }) => log(`ffmpeg: ${message}`));
 
-  log("Téléchargement du coeur ffmpeg (wasm, ~30 Mo)...");
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
-  // The worker script must also be fetched as a same-origin blob: URL —
-  // ffmpeg.js otherwise tries to spawn a Worker pointing straight at
-  // unpkg.com, which browsers block as a cross-origin Worker (SecurityError).
+  log("Chargement du coeur ffmpeg (wasm, ~30 Mo)...");
   await ffmpeg.load({
-    classWorkerURL: await toBlobURL(
-      "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js",
-      "text/javascript"
-    ),
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+    coreURL: "vendor/ffmpeg/ffmpeg-core.js",
+    wasmURL: "vendor/ffmpeg/ffmpeg-core.wasm",
   });
   log("Coeur ffmpeg chargé");
 
