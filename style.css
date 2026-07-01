@@ -46,6 +46,30 @@ h1 {
   color: #f0f0f5;
 }
 
+label {
+  display: block;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+#duration-input {
+  width: 120px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #1a1a2e;
+  color: #f0f0f5;
+  font-size: 1rem;
+}
+
+#duration-estimate {
+  color: #aaa;
+  font-size: 0.9rem;
+  margin: 8px 0 0;
+}
+
 .template-textarea {
   min-height: 70vh;
   height: 70vh;

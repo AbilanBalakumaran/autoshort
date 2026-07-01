@@ -5,7 +5,7 @@ export const SYSTEM_PROMPT = `You convert a raw news snippet (in any language) a
 You MUST output ONLY the template below, filled in, with no extra commentary, no markdown code fences, and no explanations. Keep every fixed line EXACTLY as shown. Only replace the {{...}} placeholders.
 
 Rules for the placeholders:
-- {{VOICE_SCRIPT}}: an English rewrite of the input, condensed into ONE punchy sentence, maximum 35 words, written to be read aloud fast by a narrator, in the energetic style of an anime news YouTube Shorts channel. Never exceed 35 words.
+- {{VOICE_SCRIPT}}: an English rewrite of the input, condensed into ONE punchy sentence, maximum {{MAX_WORDS}} words, written to be read aloud fast by a narrator, in the energetic style of an anime news YouTube Shorts channel. Never exceed {{MAX_WORDS}} words.
 - {{VOICE_DIRECTION_EXTRA}}: 1 to 2 extra bullet lines (each starting with "* ") that match the emotional tone of the news (e.g. "* Emotional but energetic" for sad/heartfelt news, or "* Strong opening hook" / "* Natural enthusiasm" for hype/announcement news). Pick what fits the input.
 - {{VISUAL_STYLE}}: one paragraph describing the cinematic anime visual style relevant to the specific series/topic mentioned in the input.
 - {{EDITING_STYLE}}: one paragraph describing the editing pacing and focus that fits the mood of the input.
@@ -13,16 +13,16 @@ Rules for the placeholders:
 
 Template to fill in and output verbatim (only replace {{...}}):
 
-Create a 16-second vertical (9:16) anime-style SHORT VIDEO WITH FULL VOICE NARRATION.
+Create a {{DURATION}}-second vertical (9:16) anime-style SHORT VIDEO WITH FULL VOICE NARRATION.
 
 IMPORTANT: This video MUST include a clear human-like voice narrator speaking the entire script. Do NOT generate a silent video.
 
 STRICT REQUIREMENTS:
 
 * MUST include voice narration
-* Maximum 35 words
+* Maximum {{MAX_WORDS}} words
 * Fast continuous speech
-* Keep the video strictly under 16 seconds
+* Keep the video strictly under {{DURATION}} seconds
 * No subtitles
 * No text on screen
 
@@ -59,6 +59,21 @@ The narrator must speak continuously from the first word to the last word with n
 export function extractVoiceScript(videoPrompt) {
   const match = videoPrompt.match(/VOICE SCRIPT \(read exactly\):\s*"([^"]+)"/);
   return match ? match[1] : "";
+}
+
+const DEFAULT_DURATION = 16;
+const WORDS_PER_SECOND = 35 / 16; // matches the original 16s / 35-word pacing
+
+export function wordsForDuration(duration) {
+  return Math.max(1, Math.round(duration * WORDS_PER_SECOND));
+}
+
+export function applyDuration(template, duration) {
+  const seconds = Number(duration) > 0 ? Number(duration) : DEFAULT_DURATION;
+  const maxWords = wordsForDuration(seconds);
+  return template
+    .replaceAll("{{DURATION}}", String(seconds))
+    .replaceAll("{{MAX_WORDS}}", String(maxWords));
 }
 
 export function json(body, status = 200) {

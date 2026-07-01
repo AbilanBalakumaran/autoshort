@@ -1,17 +1,18 @@
-import { SYSTEM_PROMPT, extractVoiceScript, json, corsHeaders } from "./_utils.js";
+import { SYSTEM_PROMPT, extractVoiceScript, applyDuration, json, corsHeaders } from "./_utils.js";
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
 }
 
 export async function onRequestPost({ request, env }) {
-  const { text, template } = await request.json();
+  const { text, template, duration } = await request.json();
 
   if (!text) {
     return json({ error: "Missing 'text'" }, 400);
   }
 
-  const systemPrompt = template && template.trim() ? template : SYSTEM_PROMPT;
+  const rawTemplate = template && template.trim() ? template : SYSTEM_PROMPT;
+  const systemPrompt = applyDuration(rawTemplate, duration);
 
   const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
