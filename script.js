@@ -470,10 +470,13 @@ function renderMontage(images, audioBuffer, subtitleText) {
 
 const KEN_BURNS_ZOOM_RANGE = 0.15; // 15% zoom amplitude
 
+const KEN_BURNS_SPEED = 0.5; // halved speed: zoom only covers half its range per image
+
 function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn) {
+  const eased = progress * KEN_BURNS_SPEED;
   const zoomScale = zoomIn
-    ? 1 + KEN_BURNS_ZOOM_RANGE * progress
-    : 1 + KEN_BURNS_ZOOM_RANGE * (1 - progress);
+    ? 1 + KEN_BURNS_ZOOM_RANGE * eased
+    : 1 + KEN_BURNS_ZOOM_RANGE * (1 - eased);
 
   // Blurred, darkened "cover" background fills the whole frame so the sharp
   // image on top never needs to be cropped or upscaled into blurriness.
