@@ -43,7 +43,6 @@ const clearBtn = document.getElementById("clear-btn");
 const audioPlayer = document.getElementById("audio-player");
 const audioWrapper = document.getElementById("audio-wrapper");
 const generateAudioBtn = document.getElementById("generate-audio-btn");
-const nextBtn = document.getElementById("next-btn");
 const imageStep = document.getElementById("image-step");
 const imageGrid = document.getElementById("image-grid");
 const uploadInput = document.getElementById("upload-input");
@@ -99,8 +98,7 @@ initTabs();
 initSettings();
 
 function initButtons() {
-  generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio");
-  nextBtn.innerHTML = `<span>Suivant</span><span class="icon">${ICONS.chevronRight}</span>`;
+  generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio et continuer");
   uploadBtn.innerHTML = iconLabel("folder", "Ajouter depuis ma galerie");
   regenerateImagesBtn.innerHTML = iconLabel("refresh", "Régénérer");
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
@@ -241,7 +239,6 @@ clearBtn.addEventListener("click", () => {
   resultSection.hidden = true;
   audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
-  nextBtn.hidden = true;
   imageStep.hidden = true;
   status.textContent = "";
   durationEstimate.textContent = "";
@@ -273,7 +270,6 @@ form.addEventListener("submit", async (e) => {
   resultSection.hidden = true;
   audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
-  nextBtn.hidden = true;
   imageStep.hidden = true;
   montageBtn.hidden = true;
   montageResult.hidden = true;
@@ -333,32 +329,41 @@ generateAudioBtn.addEventListener("click", async () => {
       body: JSON.stringify({ text: currentVoiceScript, voiceId }),
     });
 
-    if (!audioRes.ok) throw new Error("ElevenLabs indisponible");
+    if (!audioRes.ok) {
+      let details = "";
+      try {
+        const errData = await audioRes.json();
+        details = errData.details || errData.error || "";
+      } catch {
+        details = await audioRes.text().catch(() => "");
+      }
+      throw new Error(details || `ElevenLabs indisponible (HTTP ${audioRes.status})`);
+    }
 
     const audioBlob = await audioRes.blob();
     audioPlayer.src = URL.createObjectURL(audioBlob);
     audioWrapper.hidden = false;
     status.textContent = "";
+
     // Only a real audio file lets the montage step work later — the browser's
     // spoken fallback below has nothing to download/encode into a video.
-    nextBtn.hidden = false;
-  } catch {
-    status.textContent =
-      "Audio ElevenLabs indisponible. La voix du navigateur va la lire à titre d'aperçu, mais réessaie avant de continuer — le montage a besoin d'un vrai fichier audio.";
+    goToImageStep();
+  } catch (err) {
+    status.textContent = `Audio ElevenLabs indisponible (${err.message}). La voix du navigateur va la lire à titre d'aperçu, réessaie avant de continuer.`;
     speakWithBrowser(currentVoiceScript);
   } finally {
     generateAudioBtn.disabled = false;
   }
 });
 
-nextBtn.addEventListener("click", () => {
+function goToImageStep() {
   imageStep.hidden = false;
   document.querySelector("main").classList.add("wide");
-  nextBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  imageStep.scrollIntoView({ behavior: "smooth", block: "nearest" });
   if (imageGrid.children.length === 0) {
     generateImages();
   }
-});
+}
 
 regenerateImagesBtn.addEventListener("click", generateImages);
 
