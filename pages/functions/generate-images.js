@@ -35,7 +35,7 @@ export async function onRequestPost({ request }) {
 async function fetchRealShowImages(query) {
   try {
     const searchRes = await fetch(
-      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&order_by=popularity&sort=asc&limit=1`
+      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`
     );
     if (!searchRes.ok) return [];
     const searchData = await searchRes.json();
@@ -48,13 +48,23 @@ async function fetchRealShowImages(query) {
 
     const galleryUrls = (picsData.data || [])
       .map((p) => p.jpg?.large_image_url || p.jpg?.image_url)
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((url) => url !== mainImage);
 
-    const urls = mainImage ? [mainImage, ...galleryUrls] : galleryUrls;
-    const unique = [...new Set(urls)];
+    const shuffledGallery = shuffle(galleryUrls);
+    const urls = mainImage ? [mainImage, ...shuffledGallery] : shuffledGallery;
 
-    return unique.slice(0, 4);
+    return [...new Set(urls)].slice(0, 4);
   } catch {
     return [];
   }
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
