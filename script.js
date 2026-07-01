@@ -440,6 +440,7 @@ function renderMontage(images, audioBuffer, subtitleText) {
 
     const durationMs = audioBuffer.duration * 1000;
     const perImageMs = durationMs / images.length;
+    const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
     const startTime = performance.now();
     let rafId;
 
@@ -457,7 +458,7 @@ function renderMontage(images, audioBuffer, subtitleText) {
       const zoomIn = index % 2 === 0;
 
       drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn);
-      drawSubtitle(ctx, subtitleText, montageCanvas.width, montageCanvas.height);
+      drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs);
 
       rafId = requestAnimationFrame(draw);
     }
@@ -501,29 +502,45 @@ function drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, mode) {
   ctx.drawImage(img, x, y, w, h);
 }
 
-function drawSubtitle(ctx, text, canvasW, canvasH) {
-  if (!text) return;
+const SUBTITLE_BOUNCE_MS = 250;
 
-  const fontSize = 46;
+function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
+  if (!words || words.length === 0) return;
+
+  const wordDurationMs = totalMs / words.length;
+  const visibleCount = Math.min(words.length, Math.floor(elapsedMs / wordDurationMs) + 1);
+  if (visibleCount <= 0) return;
+
+  const visibleWords = words.slice(0, visibleCount);
+  const lastWordAppearedAt = (visibleCount - 1) * wordDurationMs;
+  const bounceProgress = Math.min(1, (elapsedMs - lastWordAppearedAt) / SUBTITLE_BOUNCE_MS);
+
+  const fontSize = 52;
   ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
   const maxWidth = canvasW - 120;
-  const words = text.split(" ");
-  const lines = [];
-  let line = "";
+  const spaceWidth = ctx.measureText(" ").width;
 
-  words.forEach((word) => {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
+  // Wrap visible words into lines while keeping track of each word individually,
+  // so the last one can be animated in place without re-wrapping every frame.
+  const lines = [];
+  let currentLine = [];
+  let currentLineText = "";
+
+  visibleWords.forEach((word) => {
+    const testText = currentLineText ? `${currentLineText} ${word}` : word;
+    if (ctx.measureText(testText).width > maxWidth && currentLine.length > 0) {
+      lines.push(currentLine);
+      currentLine = [word];
+      currentLineText = word;
     } else {
-      line = test;
+      currentLine.push(word);
+      currentLineText = testText;
     }
   });
-  if (line) lines.push(line);
+  if (currentLine.length) lines.push(currentLine);
 
   const lineHeight = fontSize * 1.3;
   const blockHeight = lines.length * lineHeight + 60;
@@ -533,7 +550,37 @@ function drawSubtitle(ctx, text, canvasW, canvasH) {
   ctx.fillRect(0, blockY, canvasW, blockHeight);
 
   ctx.fillStyle = "#ffffff";
-  lines.forEach((l, i) => {
-    ctx.fillText(l, canvasW / 2, blockY + 30 + i * lineHeight + lineHeight / 2);
+
+  let globalWordIndex = 0;
+  lines.forEach((lineWords, lineIdx) => {
+    const lineWidth = ctx.measureText(lineWords.join(" ")).width;
+    let cursorX = canvasW / 2 - lineWidth / 2;
+    const y = blockY + 30 + lineIdx * lineHeight + lineHeight / 2;
+
+    lineWords.forEach((word) => {
+      const wordWidth = ctx.measureText(word).width;
+      const centerX = cursorX + wordWidth / 2;
+      const isLastVisible = globalWordIndex === visibleCount - 1;
+
+      if (isLastVisible && bounceProgress < 1) {
+        const scale = bounceEaseOut(bounceProgress);
+        ctx.save();
+        ctx.translate(centerX, y);
+        ctx.scale(scale, scale);
+        ctx.fillText(word, 0, 0);
+        ctx.restore();
+      } else {
+        ctx.fillText(word, centerX, y);
+      }
+
+      cursorX += wordWidth + spaceWidth;
+      globalWordIndex++;
+    });
   });
+}
+
+function bounceEaseOut(t) {
+  const c1 = 1.70158 * 1.5;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
