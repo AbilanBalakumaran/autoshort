@@ -400,6 +400,20 @@ label {
   display: none;
 }
 
+#debug-log {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #000;
+  color: #6f6;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 #montage-result {
   margin-top: 16px;
   padding: 16px;

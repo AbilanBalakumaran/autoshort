@@ -63,6 +63,17 @@ const descriptionOutput = document.getElementById("description-output");
 const tagsOutput = document.getElementById("tags-output");
 const copyDescriptionBtn = document.getElementById("copy-description-btn");
 const copyTagsBtn = document.getElementById("copy-tags-btn");
+const debugLog = document.getElementById("debug-log");
+
+function log(msg) {
+  debugLog.hidden = false;
+  const time = new Date().toLocaleTimeString();
+  debugLog.textContent += `[${time}] ${msg}\n`;
+  debugLog.scrollTop = debugLog.scrollHeight;
+}
+
+window.addEventListener("error", (e) => log(`Erreur JS globale : ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => log(`Promesse rejetée : ${e.reason?.message || e.reason}`));
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
@@ -614,31 +625,44 @@ function speakWithBrowser(text) {
 }
 
 async function generateMontage() {
+  debugLog.textContent = "";
+  log("Clic sur Générer le montage");
+
   if (selectedImages.length === 0 || !audioPlayer.src) {
     status.textContent = "Il faut au moins une image et un audio généré avant le montage.";
+    log("Bloqué : pas d'image sélectionnée ou pas d'audio généré");
     return;
   }
 
   montageBtn.disabled = true;
   status.textContent = "Chargement des images...";
+  log("Chargement des images sélectionnées...");
 
   try {
     const imageUrls = [...selectedImages];
     const images = await Promise.all(imageUrls.map(loadImage));
+    log(`${images.length} image(s) chargée(s)`);
 
     await document.fonts.load('700 90px "Obelix Pro"');
+    log("Police Obelix Pro chargée");
 
     status.textContent = "Chargement de l'audio...";
     const audioBlob = await fetch(audioPlayer.src).then((r) => r.blob());
+    log(`Audio récupéré (${audioBlob.size} octets)`);
     const audioBuffer = await new AudioContext().decodeAudioData(await audioBlob.arrayBuffer());
+    log(`Audio décodé (${audioBuffer.duration.toFixed(1)}s)`);
 
     const finalBlob = await renderMontageWithFFmpeg(
       images,
       audioBuffer,
       audioBlob,
       currentVoiceScript,
-      (msg) => (status.textContent = msg)
+      (msg) => {
+        status.textContent = msg;
+        log(msg);
+      }
     );
+    log(`Vidéo assemblée (${finalBlob.size} octets)`);
 
     montagePreview.src = URL.createObjectURL(finalBlob);
     montageDownload.href = URL.createObjectURL(finalBlob);
@@ -648,9 +672,13 @@ async function generateMontage() {
 
     status.textContent = "Génération de la fiche technique...";
     await generateMetadata();
+    log("Terminé");
     status.textContent = "";
   } catch (err) {
-    status.textContent = `Erreur montage : ${err?.message || err || "erreur inconnue"}`;
+    const message = err?.message || err || "erreur inconnue";
+    status.textContent = `Erreur montage : ${message}`;
+    log(`ERREUR : ${message}`);
+    if (err?.stack) log(err.stack);
   } finally {
     montageBtn.disabled = false;
   }
@@ -702,24 +730,35 @@ function loadScript(src) {
 // Loaded as classic UMD <script> tags (not ESM dynamic import) for maximum
 // mobile browser compatibility.
 async function getFFmpeg() {
-  if (ffmpegInstance) return ffmpegInstance;
+  if (ffmpegInstance) {
+    log("FFmpeg déjà chargé, réutilisation");
+    return ffmpegInstance;
+  }
 
   if (!window.FFmpegWASM) {
+    log("Téléchargement de @ffmpeg/ffmpeg (UMD)...");
     await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js");
+    log("@ffmpeg/ffmpeg chargé");
   }
   if (!window.FFmpegUtil) {
+    log("Téléchargement de @ffmpeg/util (UMD)...");
     await loadScript("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js");
+    log("@ffmpeg/util chargé");
   }
 
   const { FFmpeg } = window.FFmpegWASM;
   const { toBlobURL } = window.FFmpegUtil;
 
   const ffmpeg = new FFmpeg();
+  ffmpeg.on("log", ({ message }) => log(`ffmpeg: ${message}`));
+
+  log("Téléchargement du coeur ffmpeg (wasm, ~30 Mo)...");
   const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
   });
+  log("Coeur ffmpeg chargé");
 
   ffmpegInstance = ffmpeg;
   return ffmpeg;
@@ -778,6 +817,7 @@ async function renderMontageWithFFmpeg(images, audioBuffer, audioBlob, subtitleT
   onProgress("Assemblage de la vidéo...");
   const audioData = new Uint8Array(await audioBlob.arrayBuffer());
   await ffmpeg.writeFile("audio.mp3", audioData);
+  log("Audio écrit dans ffmpeg, lancement de l'encodage...");
 
   await ffmpeg.exec([
     "-framerate", String(MONTAGE_FPS),
@@ -790,6 +830,7 @@ async function renderMontageWithFFmpeg(images, audioBuffer, audioBlob, subtitleT
     "-movflags", "+faststart",
     "output.mp4",
   ]);
+  log("Encodage terminé, lecture du fichier de sortie...");
 
   const data = await ffmpeg.readFile("output.mp4");
   return new Blob([data.buffer], { type: "video/mp4" });
