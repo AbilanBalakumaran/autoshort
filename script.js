@@ -27,6 +27,8 @@ const montageCanvas = document.getElementById("montage-canvas");
 const montageResult = document.getElementById("montage-result");
 const montagePreview = document.getElementById("montage-preview");
 const montageDownload = document.getElementById("montage-download");
+const timelineStep = document.getElementById("timeline-step");
+const timelineList = document.getElementById("timeline-list");
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
@@ -44,7 +46,7 @@ let currentVisualStyle = "";
 let currentShowName = "";
 let currentCharacters = [];
 let currentRealEntities = [];
-let selectedImages = new Set();
+let selectedImages = []; // ordered array of image URLs, order = order in the video
 let defaultTemplate = "";
 
 initTabs();
@@ -188,8 +190,10 @@ clearBtn.addEventListener("click", () => {
   currentShowName = "";
   currentCharacters = [];
   currentRealEntities = [];
-  selectedImages = new Set();
+  selectedImages = [];
   imageGrid.innerHTML = "";
+  timelineStep.hidden = true;
+  timelineList.innerHTML = "";
   montageBtn.hidden = true;
   montageResult.hidden = true;
   promptInput.focus();
@@ -211,8 +215,10 @@ form.addEventListener("submit", async (e) => {
   imageStep.hidden = true;
   montageBtn.hidden = true;
   montageResult.hidden = true;
-  selectedImages = new Set();
+  selectedImages = [];
   imageGrid.innerHTML = "";
+  timelineStep.hidden = true;
+  timelineList.innerHTML = "";
 
   try {
     const template = localStorage.getItem(TEMPLATE_STORAGE_KEY) || undefined;
@@ -294,19 +300,21 @@ uploadBtn.addEventListener("click", () => uploadInput.click());
 uploadInput.addEventListener("change", () => {
   [...uploadInput.files].forEach((file) => {
     const url = URL.createObjectURL(file);
-    selectedImages.add(url);
+    selectedImages.push(url);
     addImageCard(url);
   });
   uploadInput.value = "";
 });
 
 confirmImagesBtn.addEventListener("click", () => {
-  if (selectedImages.size === 0) {
+  if (selectedImages.length === 0) {
     status.textContent = "Sélectionne au moins une image avant de valider.";
     return;
   }
-  status.textContent = `${selectedImages.size} image(s) sélectionnée(s) pour le montage.`;
+  status.textContent = `${selectedImages.length} image(s) sélectionnée(s) pour le montage.`;
   montageBtn.hidden = false;
+  timelineStep.hidden = false;
+  renderTimeline();
   montageBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
@@ -339,8 +347,8 @@ async function generateImages() {
 
     // On the very first batch, pre-select up to 5 images so the user doesn't
     // have to click each one manually.
-    if (selectedImages.size === 0) {
-      images.slice(0, 5).forEach((src) => selectedImages.add(src));
+    if (selectedImages.length === 0) {
+      selectedImages.push(...images.slice(0, 5));
     }
 
     imageGrid.innerHTML = "";
@@ -348,9 +356,10 @@ async function generateImages() {
     // Keep previously selected images visible so a "Régénérer" click doesn't lose picks.
     selectedImages.forEach((src) => addImageCard(src));
     images.forEach((src) => {
-      if (!selectedImages.has(src)) addImageCard(src);
+      if (!selectedImages.includes(src)) addImageCard(src);
     });
 
+    if (!timelineStep.hidden) renderTimeline();
     status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur images : ${err.message}`;
@@ -362,7 +371,7 @@ async function generateImages() {
 
 function addImageCard(src) {
   const card = document.createElement("div");
-  card.className = "image-card" + (selectedImages.has(src) ? " selected" : "");
+  card.className = "image-card" + (selectedImages.includes(src) ? " selected" : "");
 
   const img = document.createElement("img");
   img.src = src;
@@ -376,16 +385,113 @@ function addImageCard(src) {
   card.appendChild(badge);
 
   card.addEventListener("click", () => {
-    if (selectedImages.has(src)) {
-      selectedImages.delete(src);
+    const i = selectedImages.indexOf(src);
+    if (i !== -1) {
+      selectedImages.splice(i, 1);
       card.classList.remove("selected");
     } else {
-      selectedImages.add(src);
+      selectedImages.push(src);
       card.classList.add("selected");
     }
+    if (!timelineStep.hidden) renderTimeline();
   });
 
   imageGrid.appendChild(card);
+}
+
+function syncGridSelection() {
+  imageGrid.querySelectorAll(".image-card").forEach((card) => {
+    const src = card.querySelector("img").src;
+    card.classList.toggle("selected", selectedImages.includes(src));
+  });
+}
+
+function renderTimeline() {
+  timelineList.innerHTML = "";
+
+  const words = (currentVoiceScript || "").trim().split(/\s+/).filter(Boolean);
+  const totalSeconds = currentVoiceScript ? estimateDuration(currentVoiceScript) : 0;
+  const perImageSeconds = selectedImages.length > 0 ? totalSeconds / selectedImages.length : 0;
+
+  selectedImages.forEach((src, index) => {
+    const row = document.createElement("div");
+    row.className = "timeline-row";
+
+    const thumb = document.createElement("img");
+    thumb.src = src;
+    thumb.className = "timeline-thumb";
+
+    const startS = (index * perImageSeconds).toFixed(1);
+    const endS = ((index + 1) * perImageSeconds).toFixed(1);
+    const wordsForImage = getWordsForSegment(words, index, selectedImages.length);
+
+    const info = document.createElement("div");
+    info.className = "timeline-info";
+    info.innerHTML = `<strong>Image ${index + 1}</strong><span>${startS}s – ${endS}s</span><p>${
+      wordsForImage || "(pas de texte associé)"
+    }</p>`;
+
+    const controls = document.createElement("div");
+    controls.className = "timeline-controls";
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.textContent = "↑";
+    upBtn.disabled = index === 0;
+    upBtn.addEventListener("click", () => moveImage(index, index - 1));
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.textContent = "↓";
+    downBtn.disabled = index === selectedImages.length - 1;
+    downBtn.addEventListener("click", () => moveImage(index, index + 1));
+
+    const replaceBtn = document.createElement("button");
+    replaceBtn.type = "button";
+    replaceBtn.textContent = "🔄";
+    replaceBtn.addEventListener("click", () => replaceImage(index));
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "✕";
+    removeBtn.addEventListener("click", () => {
+      selectedImages.splice(index, 1);
+      renderTimeline();
+      syncGridSelection();
+    });
+
+    controls.append(upBtn, downBtn, replaceBtn, removeBtn);
+    row.append(thumb, info, controls);
+    timelineList.appendChild(row);
+  });
+}
+
+function moveImage(from, to) {
+  const [item] = selectedImages.splice(from, 1);
+  selectedImages.splice(to, 0, item);
+  renderTimeline();
+}
+
+function replaceImage(index) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (!file) return;
+    selectedImages[index] = URL.createObjectURL(file);
+    renderTimeline();
+    syncGridSelection();
+  });
+  input.click();
+}
+
+function getWordsForSegment(words, index, totalImages) {
+  if (words.length === 0 || totalImages === 0) return "";
+  const perImage = words.length / totalImages;
+  const start = Math.round(index * perImage);
+  const end = Math.round((index + 1) * perImage);
+  return words.slice(start, end).join(" ");
 }
 
 function estimateDuration(text) {
@@ -402,7 +508,7 @@ function speakWithBrowser(text) {
 }
 
 async function generateMontage() {
-  if (selectedImages.size === 0 || !audioPlayer.src) {
+  if (selectedImages.length === 0 || !audioPlayer.src) {
     status.textContent = "Il faut au moins une image et un audio généré avant le montage.";
     return;
   }
