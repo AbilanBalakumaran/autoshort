@@ -19,7 +19,7 @@ export async function onRequestPost({ request }) {
 
   const [characterImages, entityImages] = await Promise.all([
     Promise.all(characterNames.map(fetchCharacterImage)).then((r) => r.filter(Boolean)),
-    Promise.all(entityNames.map(fetchWikipediaImage)).then((r) => r.filter(Boolean)),
+    Promise.all(entityNames.map(fetchRealEntityImages)).then((r) => r.flat()),
   ]);
 
   let showImages = show ? await fetchRealShowImages(show) : [];
@@ -53,6 +53,27 @@ async function fetchCharacterImage(name) {
     return data.data?.[0]?.images?.jpg?.image_url || null;
   } catch {
     return null;
+  }
+}
+
+async function fetchRealEntityImages(name) {
+  const fromOpenverse = await fetchOpenverseImages(name);
+  if (fromOpenverse.length > 0) return fromOpenverse;
+
+  const fromWikipedia = await fetchWikipediaImage(name);
+  return fromWikipedia ? [fromWikipedia] : [];
+}
+
+async function fetchOpenverseImages(name) {
+  try {
+    const res = await fetch(
+      `https://api.openverse.org/v1/images/?q=${encodeURIComponent(name)}&page_size=3`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results || []).map((r) => r.url).filter(Boolean);
+  } catch {
+    return [];
   }
 }
 
