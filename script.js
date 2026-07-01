@@ -650,7 +650,7 @@ async function generateMontage() {
     await generateMetadata();
     status.textContent = "";
   } catch (err) {
-    status.textContent = `Erreur montage : ${err.message}`;
+    status.textContent = `Erreur montage : ${err?.message || err || "erreur inconnue"}`;
   } finally {
     montageBtn.disabled = false;
   }
@@ -689,14 +689,33 @@ async function generateMetadata() {
 
 let ffmpegInstance = null;
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => reject(new Error(`Impossible de charger ${src}`));
+    document.head.appendChild(el);
+  });
+}
+
+// Loaded as classic UMD <script> tags (not ESM dynamic import) for maximum
+// mobile browser compatibility.
 async function getFFmpeg() {
   if (ffmpegInstance) return ffmpegInstance;
 
-  const { FFmpeg } = await import("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
-  const { toBlobURL } = await import("https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js");
+  if (!window.FFmpegWASM) {
+    await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js");
+  }
+  if (!window.FFmpegUtil) {
+    await loadScript("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js");
+  }
+
+  const { FFmpeg } = window.FFmpegWASM;
+  const { toBlobURL } = window.FFmpegUtil;
 
   const ffmpeg = new FFmpeg();
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
@@ -734,6 +753,7 @@ async function renderMontageWithFFmpeg(images, audioBuffer, audioBlob, subtitleT
   const bgCache = { img: null, canvas: null };
   const totalFrames = Math.max(1, Math.ceil((durationMs / 1000) * MONTAGE_FPS));
 
+  onProgress("Chargement de FFmpeg...");
   const ffmpeg = await getFFmpeg();
 
   for (let frame = 0; frame < totalFrames; frame++) {
