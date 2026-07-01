@@ -6,10 +6,13 @@ const resultSection = document.getElementById("result");
 const scriptOutput = document.getElementById("script-output");
 const status = document.getElementById("status");
 const clearBtn = document.getElementById("clear-btn");
+const audioPlayer = document.getElementById("audio-player");
 
 clearBtn.addEventListener("click", () => {
   promptInput.value = "";
   resultSection.hidden = true;
+  audioPlayer.hidden = true;
+  audioPlayer.removeAttribute("src");
   status.textContent = "";
   promptInput.focus();
 });
@@ -40,6 +43,23 @@ form.addEventListener("submit", async (e) => {
 
     scriptOutput.textContent = data.videoPrompt;
     resultSection.hidden = false;
+    audioPlayer.hidden = true;
+
+    if (data.voiceScript) {
+      status.textContent = "Génération de l'audio...";
+      const audioRes = await fetch(`${WORKER_URL}/generate-audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: data.voiceScript }),
+      });
+
+      if (audioRes.ok) {
+        const audioBlob = await audioRes.blob();
+        audioPlayer.src = URL.createObjectURL(audioBlob);
+        audioPlayer.hidden = false;
+      }
+    }
+
     status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur : ${err.message}`;

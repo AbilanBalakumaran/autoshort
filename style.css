@@ -70,6 +70,8 @@ button:disabled {
   padding: 16px;
   background: #1a1a2e;
   border-radius: 8px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 #status {
@@ -80,8 +82,10 @@ button:disabled {
 
 #script-output {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   margin: 0;
+  max-width: 100%;
   font-family: inherit;
 }
 

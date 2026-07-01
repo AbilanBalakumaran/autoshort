@@ -10,9 +10,15 @@ export default {
       return handleGeneratePrompt(request, env);
     }
 
+    if (url.pathname === "/generate-audio" && request.method === "POST") {
+      return handleGenerateAudio(request, env);
+    }
+
     return new Response("Not found", { status: 404, headers: corsHeaders() });
   },
 };
+
+const ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"; // Adam
 
 const SYSTEM_PROMPT = `You convert a raw news snippet (in any language) about anime/manga into a single, ready-to-use AI video generation prompt.
 
@@ -100,8 +106,49 @@ async function handleGeneratePrompt(request, env) {
 
   const data = await groqRes.json();
   const videoPrompt = data.choices?.[0]?.message?.content ?? "";
+  const voiceScript = extractVoiceScript(videoPrompt);
 
-  return json({ videoPrompt });
+  return json({ videoPrompt, voiceScript });
+}
+
+function extractVoiceScript(videoPrompt) {
+  const match = videoPrompt.match(/VOICE SCRIPT \(read exactly\):\s*"([^"]+)"/);
+  return match ? match[1] : "";
+}
+
+async function handleGenerateAudio(request, env) {
+  const { text } = await request.json();
+
+  if (!text) {
+    return json({ error: "Missing 'text'" }, 400);
+  }
+
+  const elevenRes = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": env.VITE_ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.4, similarity_boost: 0.8 },
+      }),
+    }
+  );
+
+  if (!elevenRes.ok) {
+    const errText = await elevenRes.text();
+    return json({ error: "ElevenLabs API error", details: errText }, 502);
+  }
+
+  return new Response(elevenRes.body, {
+    status: 200,
+    headers: { "Content-Type": "audio/mpeg", ...corsHeaders() },
+  });
 }
 
 function json(body, status = 200) {

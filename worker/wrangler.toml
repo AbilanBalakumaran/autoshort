@@ -2,5 +2,8 @@ name = "wandering-river-a352"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
-# Secrets (set via `wrangler secret put GROQ_API_KEY`, never committed here):
+# Secrets (set via `wrangler secret put <NAME>`, never committed here):
 # - GROQ_API_KEY
+# - VITE_ELEVENLABS_API_KEY
+# - STABILITY_API_KEY
+# - SUPADATA_API_KEY
