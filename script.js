@@ -502,81 +502,41 @@ function drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, mode) {
   ctx.drawImage(img, x, y, w, h);
 }
 
-const SUBTITLE_BOUNCE_MS = 250;
+const SUBTITLE_BOUNCE_MS = 220;
 
 function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   if (!words || words.length === 0) return;
 
   const wordDurationMs = totalMs / words.length;
-  const visibleCount = Math.min(words.length, Math.floor(elapsedMs / wordDurationMs) + 1);
-  if (visibleCount <= 0) return;
+  const currentIndex = Math.min(words.length - 1, Math.floor(elapsedMs / wordDurationMs));
+  const word = words[currentIndex].toUpperCase();
 
-  const visibleWords = words.slice(0, visibleCount);
-  const lastWordAppearedAt = (visibleCount - 1) * wordDurationMs;
-  const bounceProgress = Math.min(1, (elapsedMs - lastWordAppearedAt) / SUBTITLE_BOUNCE_MS);
+  const wordAppearedAt = currentIndex * wordDurationMs;
+  const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
+  const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 52;
-  ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+  const fontSize = 90;
+  ctx.font = `900 ${fontSize}px "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  const maxWidth = canvasW - 120;
-  const spaceWidth = ctx.measureText(" ").width;
+  const x = canvasW / 2;
+  const y = canvasH * 0.72;
 
-  // Wrap visible words into lines while keeping track of each word individually,
-  // so the last one can be animated in place without re-wrapping every frame.
-  const lines = [];
-  let currentLine = [];
-  let currentLineText = "";
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
 
-  visibleWords.forEach((word) => {
-    const testText = currentLineText ? `${currentLineText} ${word}` : word;
-    if (ctx.measureText(testText).width > maxWidth && currentLine.length > 0) {
-      lines.push(currentLine);
-      currentLine = [word];
-      currentLineText = word;
-    } else {
-      currentLine.push(word);
-      currentLineText = testText;
-    }
-  });
-  if (currentLine.length) lines.push(currentLine);
-
-  const lineHeight = fontSize * 1.3;
-  const blockHeight = lines.length * lineHeight + 60;
-  const blockY = canvasH - blockHeight - 80;
-
-  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
-  ctx.fillRect(0, blockY, canvasW, blockHeight);
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
+  ctx.lineWidth = fontSize * 0.16;
+  ctx.strokeStyle = "#000000";
+  ctx.strokeText(word, 0, 0);
 
   ctx.fillStyle = "#ffffff";
+  ctx.fillText(word, 0, 0);
 
-  let globalWordIndex = 0;
-  lines.forEach((lineWords, lineIdx) => {
-    const lineWidth = ctx.measureText(lineWords.join(" ")).width;
-    let cursorX = canvasW / 2 - lineWidth / 2;
-    const y = blockY + 30 + lineIdx * lineHeight + lineHeight / 2;
-
-    lineWords.forEach((word) => {
-      const wordWidth = ctx.measureText(word).width;
-      const centerX = cursorX + wordWidth / 2;
-      const isLastVisible = globalWordIndex === visibleCount - 1;
-
-      if (isLastVisible && bounceProgress < 1) {
-        const scale = bounceEaseOut(bounceProgress);
-        ctx.save();
-        ctx.translate(centerX, y);
-        ctx.scale(scale, scale);
-        ctx.fillText(word, 0, 0);
-        ctx.restore();
-      } else {
-        ctx.fillText(word, centerX, y);
-      }
-
-      cursorX += wordWidth + spaceWidth;
-      globalWordIndex++;
-    });
-  });
+  ctx.restore();
 }
 
 function bounceEaseOut(t) {
