@@ -43,6 +43,7 @@ export async function onRequestPost({ request, env }) {
   try {
     const audioStream = await env.AI.run("@cf/deepgram/aura-1", {
       text,
+      speaker: "asteria",
       encoding: "mp3",
     });
 
