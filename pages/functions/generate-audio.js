@@ -23,7 +23,14 @@ export async function onRequestPost({ request, env }) {
       body: JSON.stringify({
         text,
         model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.4, similarity_boost: 0.8 },
+        // Lower stability + added style = more natural human variation in
+        // pitch/pacing instead of a flat, robotic-sounding read.
+        voice_settings: {
+          stability: 0.3,
+          similarity_boost: 0.8,
+          style: 0.45,
+          use_speaker_boost: true,
+        },
       }),
     }
   );
