@@ -61,6 +61,17 @@ export function extractVoiceScript(videoPrompt) {
   return match ? match[1] : "";
 }
 
+export function replaceVoiceScript(videoPrompt, newVoiceScript) {
+  return videoPrompt.replace(
+    /(VOICE SCRIPT \(read exactly\):\s*")[^"]+(")/,
+    `$1${newVoiceScript}$2`
+  );
+}
+
+export function countWords(text) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
 const DEFAULT_DURATION = 16;
 const WORDS_PER_SECOND = 35 / 16; // matches the original 16s / 35-word pacing
 
