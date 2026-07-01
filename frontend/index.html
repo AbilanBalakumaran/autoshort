@@ -9,16 +9,16 @@
 <body>
   <main>
     <h1>🎌 AnimaShorts AI</h1>
-    <p>Un prompt → un script de short anime.</p>
+    <p>Colle une actu anime/manga → reçois un prompt vidéo prêt à l'emploi.</p>
 
     <form id="prompt-form">
-      <textarea id="prompt" placeholder="Ex: Un ninja qui découvre un pouvoir caché" required></textarea>
-      <button type="submit">Générer le script</button>
+      <textarea id="prompt" placeholder="Colle ici le texte de l'actu (ex: annonce, réaction, news manga...)" required></textarea>
+      <button type="submit">Générer le prompt</button>
     </form>
 
     <section id="result" hidden>
-      <h2>Script généré</h2>
-      <p id="script-output"></p>
+      <h2>Prompt vidéo généré</h2>
+      <pre id="script-output"></pre>
     </section>
 
     <p id="status"></p>

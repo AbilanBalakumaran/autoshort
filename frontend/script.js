@@ -18,10 +18,10 @@ form.addEventListener("submit", async (e) => {
   resultSection.hidden = true;
 
   try {
-    const res = await fetch(`${WORKER_URL}/generate-script`, {
+    const res = await fetch(`${WORKER_URL}/generate-prompt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ text: prompt }),
     });
 
     const data = await res.json();
@@ -30,7 +30,7 @@ form.addEventListener("submit", async (e) => {
       throw new Error(data.error || "Erreur inconnue");
     }
 
-    scriptOutput.textContent = data.script;
+    scriptOutput.textContent = data.videoPrompt;
     resultSection.hidden = false;
     status.textContent = "";
   } catch (err) {
