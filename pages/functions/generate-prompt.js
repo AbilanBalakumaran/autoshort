@@ -3,7 +3,7 @@ import {
   extractVoiceScript,
   replaceVoiceScript,
   applyDuration,
-  wordsForDuration,
+  wordRangeForDuration,
   countWords,
   json,
   corsHeaders,
@@ -22,9 +22,7 @@ export async function onRequestPost({ request, env }) {
 
   const rawTemplate = template && template.trim() ? template : SYSTEM_PROMPT;
   const systemPrompt = applyDuration(rawTemplate, duration);
-
-  const maxWords = wordsForDuration(Number(duration) > 0 ? Number(duration) : 16);
-  const minWords = Math.max(1, maxWords - 5);
+  const { minWords, maxWords } = wordRangeForDuration(duration);
 
   let videoPrompt = await callGroq(env, systemPrompt, text);
   if (videoPrompt === null) {
