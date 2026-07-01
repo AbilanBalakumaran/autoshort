@@ -278,8 +278,6 @@ confirmImagesBtn.addEventListener("click", () => {
 });
 
 async function generateImages() {
-  imageGrid.innerHTML = "";
-  selectedImages = new Set();
   regenerateImagesBtn.disabled = true;
   confirmImagesBtn.disabled = true;
   status.textContent = "Génération des images en cours...";
@@ -298,7 +296,14 @@ async function generateImages() {
       throw new Error((data.error || "Erreur de génération d'images") + details);
     }
 
-    (data.images || []).forEach((src, i) => addImageCard(src, i));
+    imageGrid.innerHTML = "";
+
+    // Keep previously selected images visible so a "Régénérer" click doesn't lose picks.
+    selectedImages.forEach((src) => addImageCard(src));
+    (data.images || []).forEach((src) => {
+      if (!selectedImages.has(src)) addImageCard(src);
+    });
+
     status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur images : ${err.message}`;
@@ -308,13 +313,13 @@ async function generateImages() {
   }
 }
 
-function addImageCard(src, index) {
+function addImageCard(src) {
   const card = document.createElement("div");
-  card.className = "image-card";
+  card.className = "image-card" + (selectedImages.has(src) ? " selected" : "");
 
   const img = document.createElement("img");
   img.src = src;
-  img.alt = `Image proposée ${index + 1}`;
+  img.alt = "Image proposée";
 
   const badge = document.createElement("span");
   badge.className = "image-check";
@@ -324,11 +329,11 @@ function addImageCard(src, index) {
   card.appendChild(badge);
 
   card.addEventListener("click", () => {
-    if (selectedImages.has(index)) {
-      selectedImages.delete(index);
+    if (selectedImages.has(src)) {
+      selectedImages.delete(src);
       card.classList.remove("selected");
     } else {
-      selectedImages.add(index);
+      selectedImages.add(src);
       card.classList.add("selected");
     }
   });
