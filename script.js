@@ -411,6 +411,10 @@ async function copyToClipboard(text, btn, label) {
 async function generateImages() {
   regenerateImagesBtn.disabled = true;
   confirmImagesBtn.disabled = true;
+  // Only "Valider la sélection" should reveal the montage button — hide it
+  // again whenever the user goes back to picking/regenerating images.
+  montageBtn.hidden = true;
+  timelineStep.hidden = true;
   status.textContent = "Génération des images en cours...";
 
   try {

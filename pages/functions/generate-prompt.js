@@ -77,7 +77,7 @@ async function callGroq(env, systemPrompt, userText) {
 }
 
 async function fixVoiceScript(env, voiceScript, minWords, maxWords) {
-  const fixSystemPrompt = `You rewrite a narration sentence so it has between ${minWords} and ${maxWords} words (never fewer than ${minWords}, never more than ${maxWords}). Keep the same meaning, energetic anime-news-narrator tone, one continuous sentence. If it's too short, add natural context or color to reach the target length. Output ONLY the rewritten sentence, no quotes, no explanations.`;
+  const fixSystemPrompt = `You rewrite a narration sentence so it has between ${minWords} and ${maxWords} words (never fewer than ${minWords}, never more than ${maxWords}). Keep the same meaning, energetic anime-news-narrator tone, one continuous sentence with natural comma pauses at clause breaks and a final period (needed for correct text-to-speech pacing and subtitle timing). If it's too short, add natural context or color to reach the target length. Output ONLY the rewritten sentence, no quotes, no explanations.`;
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
