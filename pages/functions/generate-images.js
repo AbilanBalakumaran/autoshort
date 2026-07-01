@@ -22,7 +22,7 @@ export async function onRequestPost({ request, env }) {
 
   const result = await generateAiImages(env, prompt, show);
   if (result.error) {
-    return json({ error: "Stability API error", details: result.error }, 502);
+    return json({ error: "AI image generation error", details: result.error }, 502);
   }
 
   return json({ images: result.images, source: "ai" });
@@ -63,36 +63,38 @@ function shuffle(arr) {
 
 async function generateAiImages(env, prompt, show) {
   const showPrefix = show ? `${show} anime, in the art style of ${show}, ` : "";
+  const fullPrompt = `${showPrefix}${prompt}, anime style, cinematic, vertical composition, high detail, portrait orientation`;
 
-  const res = await fetch(
-    "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${env.STABILITY_API_KEY}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify({
-        text_prompts: [
-          { text: `${showPrefix}${prompt}, anime style, cinematic, vertical composition, high detail, portrait orientation`, weight: 1 },
-          { text: "text, subtitles, watermark, blurry, low quality, landscape orientation", weight: -1 },
-        ],
-        samples: 4,
-        width: 768,
-        height: 1344,
-        cfg_scale: 7,
-        steps: 30,
-      }),
-    }
-  );
+  try {
+    const outputs = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        env.AI.run("@cf/stabilityai/stable-diffusion-xl-base-1.0", {
+          prompt: fullPrompt,
+          width: 768,
+          height: 1344,
+        })
+      )
+    );
 
-  if (!res.ok) {
-    const errText = await res.text();
-    return { error: errText };
+    const images = await Promise.all(
+      outputs.map(async (output) => {
+        const buffer = await new Response(output).arrayBuffer();
+        return `data:image/png;base64,${arrayBufferToBase64(buffer)}`;
+      })
+    );
+
+    return { images };
+  } catch (err) {
+    return { error: err.message || String(err) };
   }
+}
 
-  const data = await res.json();
-  const images = (data.artifacts || []).map((a) => `data:image/png;base64,${a.base64}`);
-  return { images };
+function arrayBufferToBase64(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
