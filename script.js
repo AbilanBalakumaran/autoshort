@@ -662,21 +662,14 @@ async function generateMontage() {
     const audioBuffer = await new AudioContext().decodeAudioData(await audioBlob.arrayBuffer());
     log(`Audio décodé (${audioBuffer.duration.toFixed(1)}s)`);
 
-    const finalBlob = await renderMontageWithFFmpeg(
-      images,
-      audioBuffer,
-      audioBlob,
-      currentVoiceScript,
-      (msg) => {
-        status.textContent = msg;
-        log(msg);
-      }
-    );
-    log(`Vidéo assemblée (${finalBlob.size} octets)`);
+    status.textContent = "Enregistrement du montage...";
+    log("Enregistrement du montage (canvas + audio)...");
+    const recording = await renderMontage(images, audioBuffer, currentVoiceScript);
+    log(`Vidéo assemblée (${recording.blob.size} octets, ${recording.isMp4 ? "mp4" : "webm"})`);
 
-    montagePreview.src = URL.createObjectURL(finalBlob);
-    montageDownload.href = URL.createObjectURL(finalBlob);
-    montageDownload.download = "autoshort.mp4";
+    montagePreview.src = URL.createObjectURL(recording.blob);
+    montageDownload.href = URL.createObjectURL(recording.blob);
+    montageDownload.download = recording.isMp4 ? "autoshort.mp4" : "autoshort.webm";
     montageResult.hidden = false;
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
@@ -725,57 +718,6 @@ async function generateMetadata() {
   }
 }
 
-let ffmpegInstance = null;
-
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const el = document.createElement("script");
-    el.src = src;
-    el.onload = resolve;
-    el.onerror = () => reject(new Error(`Impossible de charger ${src}`));
-    document.head.appendChild(el);
-  });
-}
-
-// All ffmpeg.wasm files are hosted locally (vendor/ffmpeg/) instead of a CDN.
-// The UMD bundle resolves its own worker chunk via document.currentScript.src,
-// so loading it from our own origin makes that chunk same-origin too —
-// avoiding the cross-origin Worker SecurityError that cross-CDN loading hit.
-async function getFFmpeg() {
-  if (ffmpegInstance) {
-    log("FFmpeg déjà chargé, réutilisation");
-    return ffmpegInstance;
-  }
-
-  if (!window.FFmpegWASM) {
-    log("Chargement de @ffmpeg/ffmpeg...");
-    await loadScript("vendor/ffmpeg/ffmpeg.js");
-    log("@ffmpeg/ffmpeg chargé");
-  }
-  if (!window.FFmpegUtil) {
-    log("Chargement de @ffmpeg/util...");
-    await loadScript("vendor/ffmpeg/ffmpeg-util.js");
-    log("@ffmpeg/util chargé");
-  }
-
-  const { FFmpeg } = window.FFmpegWASM;
-  const { toBlobURL } = window.FFmpegUtil;
-
-  const ffmpeg = new FFmpeg();
-  ffmpeg.on("log", ({ message }) => log(`ffmpeg: ${message}`));
-
-  log("Chargement du coeur ffmpeg (wasm, ~30 Mo)...");
-  const coreBase = new URL("vendor/ffmpeg/", document.baseURI).href;
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${coreBase}ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${coreBase}ffmpeg-core.wasm`, "application/wasm"),
-  });
-  log("Coeur ffmpeg chargé");
-
-  ffmpegInstance = ffmpeg;
-  return ffmpeg;
-}
-
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -786,68 +728,76 @@ function loadImage(src) {
   });
 }
 
-const MONTAGE_FPS = 12; // kept low deliberately: mobile Safari/Chrome can silently
-// crash/reload the tab (no catchable JS error) if memory use from hundreds of
-// frames + the ~30MB ffmpeg.wasm core gets too high.
+// ffmpeg.wasm turned out to be unreliable to load correctly in this hosting
+// setup (CDN cross-origin Worker errors, then UMD/ESM export mismatches even
+// self-hosted) despite several targeted fixes. Reverted to real-time
+// canvas.captureStream() + MediaRecorder, which is proven to work on desktop.
+// Safari (iOS 14.3+/macOS) can record straight to MP4, avoiding the WebM
+// mobile-playback problem entirely for that browser.
+function renderMontage(images, audioBuffer, subtitleText) {
+  return new Promise((resolve, reject) => {
+    const ctx = montageCanvas.getContext("2d");
+    const audioCtx = new AudioContext();
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    const dest = audioCtx.createMediaStreamDestination();
+    source.connect(dest);
+    source.connect(audioCtx.destination);
 
-// Real-time recording via canvas.captureStream() + MediaRecorder is
-// notoriously unreliable on mobile browsers (silently produces empty/broken
-// video tracks on iOS Safari and some Android Chrome versions), even though
-// it works fine on desktop. Rendering each frame to an image and assembling
-// them with ffmpeg.wasm is slower but works identically everywhere.
-async function renderMontageWithFFmpeg(images, audioBuffer, audioBlob, subtitleText, onProgress) {
-  const ctx = montageCanvas.getContext("2d");
-  const canvasW = montageCanvas.width;
-  const canvasH = montageCanvas.height;
+    const videoStream = montageCanvas.captureStream(30);
+    const combinedStream = new MediaStream([
+      ...videoStream.getVideoTracks(),
+      ...dest.stream.getAudioTracks(),
+    ]);
 
-  const durationMs = audioBuffer.duration * 1000;
-  const perImageMs = durationMs / images.length;
-  const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
-  const bgCache = { img: null, canvas: null };
-  const totalFrames = Math.max(1, Math.ceil((durationMs / 1000) * MONTAGE_FPS));
+    const candidates = [
+      "video/mp4;codecs=avc1,mp4a",
+      "video/mp4",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ];
+    const mimeType = candidates.find((t) => MediaRecorder.isTypeSupported(t));
+    const isMp4 = mimeType?.startsWith("video/mp4");
+    log(`Format d'enregistrement choisi : ${mimeType || "défaut du navigateur"}`);
 
-  onProgress("Chargement de FFmpeg...");
-  const ffmpeg = await getFFmpeg();
+    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
+    recorder.onstop = () =>
+      resolve({ blob: new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" }), isMp4 });
+    recorder.onerror = (e) => reject(e.error || new Error("Erreur d'enregistrement"));
 
-  for (let frame = 0; frame < totalFrames; frame++) {
-    const elapsed = (frame / MONTAGE_FPS) * 1000;
-    const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
-    const segmentElapsed = elapsed - index * perImageMs;
-    const progress = Math.min(1, segmentElapsed / perImageMs);
-    const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
+    const durationMs = audioBuffer.duration * 1000;
+    const perImageMs = durationMs / images.length;
+    const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
+    const startTime = performance.now();
+    const bgCache = { img: null, canvas: null };
+    let rafId;
 
-    drawKenBurnsFrame(ctx, images[index], canvasW, canvasH, progress, zoomIn, bgCache);
-    drawSubtitle(ctx, subtitleWords, canvasW, canvasH, elapsed, durationMs);
+    function draw() {
+      const elapsed = performance.now() - startTime;
+      if (elapsed >= durationMs) {
+        cancelAnimationFrame(rafId);
+        recorder.stop();
+        return;
+      }
 
-    const frameBlob = await new Promise((resolve) => montageCanvas.toBlob(resolve, "image/jpeg", 0.8));
-    const frameData = new Uint8Array(await frameBlob.arrayBuffer());
-    await ffmpeg.writeFile(`frame${String(frame).padStart(5, "0")}.jpg`, frameData);
+      const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
+      const segmentElapsed = elapsed - index * perImageMs;
+      const progress = Math.min(1, segmentElapsed / perImageMs);
+      const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
 
-    if (frame % 5 === 0) {
-      onProgress(`Rendu des images... ${Math.round(((frame + 1) / totalFrames) * 100)}%`);
+      drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
+      drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs);
+
+      rafId = requestAnimationFrame(draw);
     }
-  }
 
-  onProgress("Assemblage de la vidéo...");
-  const audioData = new Uint8Array(await audioBlob.arrayBuffer());
-  await ffmpeg.writeFile("audio.mp3", audioData);
-  log("Audio écrit dans ffmpeg, lancement de l'encodage...");
-
-  await ffmpeg.exec([
-    "-framerate", String(MONTAGE_FPS),
-    "-i", "frame%05d.jpg",
-    "-i", "audio.mp3",
-    "-c:v", "libx264",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-shortest",
-    "-movflags", "+faststart",
-    "output.mp4",
-  ]);
-  log("Encodage terminé, lecture du fichier de sortie...");
-
-  const data = await ffmpeg.readFile("output.mp4");
-  return new Blob([data.buffer], { type: "video/mp4" });
+    recorder.start();
+    source.start();
+    draw();
+  });
 }
 
 const KEN_BURNS_ZOOM_RANGE = 0.15; // 15% zoom amplitude
