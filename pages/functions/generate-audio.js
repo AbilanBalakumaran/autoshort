@@ -5,14 +5,14 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request, env }) {
-  const { text } = await request.json();
+  const { text, voiceId } = await request.json();
 
   if (!text) {
     return json({ error: "Missing 'text'" }, 400);
   }
 
   const elevenRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}`,
     {
       method: "POST",
       headers: {

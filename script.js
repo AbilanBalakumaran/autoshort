@@ -1,6 +1,7 @@
 const WORKER_URL = "https://autoshort-2ym.pages.dev";
 const TEMPLATE_STORAGE_KEY = "autoshort-template";
 const DURATION_STORAGE_KEY = "autoshort-duration";
+const VOICE_STORAGE_KEY = "autoshort-voice";
 const DEFAULT_DURATION = 16;
 const WORDS_PER_SECOND = 35 / 16;
 
@@ -17,9 +18,14 @@ const generateAudioBtn = document.getElementById("generate-audio-btn");
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
+const voiceSelect = document.getElementById("voice-select");
+const previewVoiceBtn = document.getElementById("preview-voice-btn");
+const voicePreview = document.getElementById("voice-preview");
 const saveTemplateBtn = document.getElementById("save-template-btn");
 const resetTemplateBtn = document.getElementById("reset-template-btn");
 const settingsStatus = document.getElementById("settings-status");
+
+let voicesById = {};
 
 let currentVoiceScript = "";
 let defaultTemplate = "";
@@ -56,11 +62,47 @@ async function initSettings() {
 
   const savedDuration = localStorage.getItem(DURATION_STORAGE_KEY);
   durationInput.value = savedDuration || DEFAULT_DURATION;
+
+  await loadVoices();
 }
+
+async function loadVoices() {
+  try {
+    const res = await fetch(`${WORKER_URL}/voices`);
+    const data = await res.json();
+
+    (data.voices || []).forEach((v) => {
+      voicesById[v.voice_id] = v;
+      const option = document.createElement("option");
+      option.value = v.voice_id;
+      option.textContent = `${v.name}${v.category ? " · " + v.category : ""}`;
+      voiceSelect.appendChild(option);
+    });
+
+    const savedVoice = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (savedVoice && voicesById[savedVoice]) {
+      voiceSelect.value = savedVoice;
+    }
+  } catch {
+    // keep only the "Par défaut" option if the voice list can't be fetched
+  }
+}
+
+previewVoiceBtn.addEventListener("click", () => {
+  const voice = voicesById[voiceSelect.value];
+  if (!voice || !voice.preview_url) return;
+  voicePreview.src = voice.preview_url;
+  voicePreview.play();
+});
 
 saveTemplateBtn.addEventListener("click", () => {
   localStorage.setItem(TEMPLATE_STORAGE_KEY, templateInput.value);
   localStorage.setItem(DURATION_STORAGE_KEY, durationInput.value || DEFAULT_DURATION);
+  if (voiceSelect.value) {
+    localStorage.setItem(VOICE_STORAGE_KEY, voiceSelect.value);
+  } else {
+    localStorage.removeItem(VOICE_STORAGE_KEY);
+  }
   settingsStatus.textContent = "Template enregistré.";
   setTimeout(() => (settingsStatus.textContent = ""), 2000);
 });
@@ -68,8 +110,10 @@ saveTemplateBtn.addEventListener("click", () => {
 resetTemplateBtn.addEventListener("click", () => {
   templateInput.value = defaultTemplate;
   durationInput.value = DEFAULT_DURATION;
+  voiceSelect.value = "";
   localStorage.removeItem(TEMPLATE_STORAGE_KEY);
   localStorage.removeItem(DURATION_STORAGE_KEY);
+  localStorage.removeItem(VOICE_STORAGE_KEY);
   settingsStatus.textContent = "Template réinitialisé.";
   setTimeout(() => (settingsStatus.textContent = ""), 2000);
 });
@@ -136,10 +180,11 @@ generateAudioBtn.addEventListener("click", async () => {
   audioWrapper.hidden = true;
 
   try {
+    const voiceId = localStorage.getItem(VOICE_STORAGE_KEY) || undefined;
     const audioRes = await fetch(`${WORKER_URL}/generate-audio`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: currentVoiceScript }),
+      body: JSON.stringify({ text: currentVoiceScript, voiceId }),
     });
 
     if (!audioRes.ok) throw new Error("ElevenLabs indisponible");

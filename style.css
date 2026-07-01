@@ -70,6 +70,26 @@ label {
   margin: 8px 0 0;
 }
 
+.voice-row {
+  display: flex;
+  gap: 8px;
+}
+
+#voice-select {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #1a1a2e;
+  color: #f0f0f5;
+  font-size: 1rem;
+}
+
+#preview-voice-btn {
+  flex: 0 0 auto;
+  background: #333;
+}
+
 .template-textarea {
   min-height: 70vh;
   height: 70vh;
