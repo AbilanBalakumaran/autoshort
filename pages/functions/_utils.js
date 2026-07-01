@@ -23,6 +23,7 @@ Example of correct length calibration: for a 16-second video (target ~33 words),
 - {{EDITING_STYLE}}: one paragraph describing the editing pacing and focus that fits the mood of the input.
 - {{BACKGROUND_MUSIC}}: one paragraph describing a music style that fits the mood of the input.
 - {{SHOW_NAME}}: the exact name of the specific anime/manga franchise mentioned or clearly implied by the input (e.g. "Blue Lock", "Mushoku Tensei", "One Piece"). If no specific franchise is identifiable, output "anime" instead.
+- {{CHARACTERS}}: a comma-separated list of specific character names explicitly mentioned in the input (e.g. "Isagi, Bachira"). If none are mentioned, output "none".
 
 Template to fill in and output verbatim (only replace {{...}}):
 
@@ -69,7 +70,8 @@ BACKGROUND MUSIC:
 FINAL RULE:
 The narrator must speak continuously from the first word to the last word with no silence, no gaps, and no interruptions.
 
-SHOW: {{SHOW_NAME}}`;
+SHOW: {{SHOW_NAME}}
+CHARACTERS: {{CHARACTERS}}`;
 
 export function extractVoiceScript(videoPrompt) {
   const match = videoPrompt.match(/VOICE SCRIPT \(read exactly\):\s*"([^"]+)"/);
@@ -84,6 +86,17 @@ export function extractVisualStyle(videoPrompt) {
 export function extractShowName(videoPrompt) {
   const match = videoPrompt.match(/SHOW:\s*(.+)/);
   return match ? match[1].trim() : "";
+}
+
+export function extractCharacters(videoPrompt) {
+  const match = videoPrompt.match(/CHARACTERS:\s*(.+)/);
+  if (!match) return [];
+  const raw = match[1].trim();
+  if (!raw || raw.toLowerCase() === "none") return [];
+  return raw
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
 }
 
 export function replaceVoiceScript(videoPrompt, newVoiceScript) {

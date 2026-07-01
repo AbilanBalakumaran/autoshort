@@ -3,6 +3,7 @@ import {
   extractVoiceScript,
   extractVisualStyle,
   extractShowName,
+  extractCharacters,
   replaceVoiceScript,
   applyDuration,
   wordRangeForDuration,
@@ -46,8 +47,9 @@ export async function onRequestPost({ request, env }) {
 
   const visualStyle = extractVisualStyle(videoPrompt);
   const showName = extractShowName(videoPrompt);
+  const characters = extractCharacters(videoPrompt);
 
-  return json({ videoPrompt, voiceScript, visualStyle, showName });
+  return json({ videoPrompt, voiceScript, visualStyle, showName, characters });
 }
 
 async function callGroq(env, systemPrompt, userText) {

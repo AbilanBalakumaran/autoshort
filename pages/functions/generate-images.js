@@ -5,19 +5,25 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request }) {
-  const { prompt, showName } = await request.json();
+  const { prompt, showName, characters } = await request.json();
 
   if (!prompt) {
     return json({ error: "Missing 'prompt'" }, 400);
   }
 
   const show = showName && showName.toLowerCase() !== "anime" ? showName.trim() : "";
+  const characterNames = Array.isArray(characters) ? characters.slice(0, 3) : [];
 
-  let images = show ? await fetchRealShowImages(show) : [];
+  const characterImages = (
+    await Promise.all(characterNames.map(fetchCharacterImage))
+  ).filter(Boolean);
 
-  if (images.length === 0) {
-    images = await fetchRealShowImages(prompt);
+  let showImages = show ? await fetchRealShowImages(show) : [];
+  if (showImages.length === 0) {
+    showImages = await fetchRealShowImages(prompt);
   }
+
+  const images = [...new Set([...characterImages, ...showImages])].slice(0, 4);
 
   if (images.length === 0) {
     return json(
@@ -30,6 +36,17 @@ export async function onRequestPost({ request }) {
   }
 
   return json({ images, source: "web" });
+}
+
+async function fetchCharacterImage(name) {
+  try {
+    const res = await fetch(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(name)}&limit=1`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.data?.[0]?.images?.jpg?.image_url || null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchRealShowImages(query) {

@@ -40,6 +40,7 @@ let selectedVoiceId = "";
 let currentVoiceScript = "";
 let currentVisualStyle = "";
 let currentShowName = "";
+let currentCharacters = [];
 let selectedImages = new Set();
 let defaultTemplate = "";
 
@@ -182,6 +183,7 @@ clearBtn.addEventListener("click", () => {
   currentVoiceScript = "";
   currentVisualStyle = "";
   currentShowName = "";
+  currentCharacters = [];
   selectedImages = new Set();
   imageGrid.innerHTML = "";
   montageBtn.hidden = true;
@@ -228,6 +230,7 @@ form.addEventListener("submit", async (e) => {
     currentVoiceScript = data.voiceScript || "";
     currentVisualStyle = data.visualStyle || "";
     currentShowName = data.showName || "";
+    currentCharacters = data.characters || [];
     resultSection.hidden = false;
     durationEstimate.textContent = currentVoiceScript
       ? `Durée estimée : ~${estimateDuration(currentVoiceScript)}s`
@@ -303,7 +306,7 @@ async function generateImages() {
     const res = await fetch(`${WORKER_URL}/generate-images`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: stylePrompt, showName: currentShowName }),
+      body: JSON.stringify({ prompt: stylePrompt, showName: currentShowName, characters: currentCharacters }),
     });
 
     const data = await res.json();
