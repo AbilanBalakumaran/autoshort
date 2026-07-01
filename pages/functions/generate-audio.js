@@ -41,10 +41,12 @@ export async function onRequestPost({ request, env }) {
   // Cloudflare Workers AI's free TTS model so a real, downloadable audio
   // file is always produced.
   try {
-    const aiResult = await env.AI.run("@cf/myshell-ai/melotts", { prompt: text, lang: "en" });
-    const audioBytes = base64ToBytes(aiResult.audio);
+    const audioStream = await env.AI.run("@cf/deepgram/aura-1", {
+      text,
+      encoding: "mp3",
+    });
 
-    return new Response(audioBytes, {
+    return new Response(audioStream, {
       status: 200,
       headers: { "Content-Type": "audio/mpeg", "X-Audio-Source": "workers-ai", ...corsHeaders() },
     });
@@ -57,13 +59,4 @@ export async function onRequestPost({ request, env }) {
       502
     );
   }
-}
-
-function base64ToBytes(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
 }
