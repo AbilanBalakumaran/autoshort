@@ -475,7 +475,7 @@ function syncGridSelection() {
   });
 }
 
-let dragSrcIndex = null;
+let draggedSrc = null;
 
 function renderTimeline() {
   timelineList.innerHTML = "";
@@ -486,26 +486,14 @@ function renderTimeline() {
 
   selectedImages.forEach((src, index) => {
     const row = document.createElement("div");
-    row.className = "timeline-row";
-    row.draggable = true;
-
-    row.addEventListener("dragstart", () => {
-      dragSrcIndex = index;
-      row.classList.add("dragging");
-    });
-    row.addEventListener("dragend", () => row.classList.remove("dragging"));
-    row.addEventListener("dragover", (e) => e.preventDefault());
-    row.addEventListener("drop", (e) => {
-      e.preventDefault();
-      if (dragSrcIndex === null || dragSrcIndex === index) return;
-      moveImage(dragSrcIndex, index);
-      dragSrcIndex = null;
-    });
+    row.className = "timeline-row" + (src === draggedSrc ? " dragging" : "");
+    row.dataset.src = src;
 
     const handle = document.createElement("div");
     handle.className = "timeline-handle";
     handle.innerHTML = ICONS.grip;
     handle.title = "Glisser pour réordonner";
+    handle.addEventListener("pointerdown", (e) => startDrag(e, src));
 
     const thumb = document.createElement("img");
     thumb.src = src;
@@ -553,6 +541,41 @@ function moveImage(from, to) {
   const [item] = selectedImages.splice(from, 1);
   selectedImages.splice(to, 0, item);
   renderTimeline();
+}
+
+// Pointer Events unify mouse (desktop drag) and touch (mobile press-and-drag
+// from the handle) into a single implementation.
+function startDrag(e, src) {
+  e.preventDefault();
+  draggedSrc = src;
+  renderTimeline();
+
+  const onPointerMove = (moveEvent) => {
+    const el = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+    const targetRow = el?.closest(".timeline-row");
+    if (!targetRow) return;
+
+    const targetSrc = targetRow.dataset.src;
+    if (!targetSrc || targetSrc === draggedSrc) return;
+
+    const from = selectedImages.indexOf(draggedSrc);
+    const to = selectedImages.indexOf(targetSrc);
+    if (from !== -1 && to !== -1 && from !== to) {
+      moveImage(from, to);
+    }
+  };
+
+  const onPointerUp = () => {
+    draggedSrc = null;
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerup", onPointerUp);
+    document.removeEventListener("pointercancel", onPointerUp);
+    renderTimeline();
+  };
+
+  document.addEventListener("pointermove", onPointerMove);
+  document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("pointercancel", onPointerUp);
 }
 
 function replaceImage(index) {
@@ -611,16 +634,19 @@ async function generateMontage() {
       .then((buf) => new AudioContext().decodeAudioData(buf));
 
     status.textContent = "Enregistrement du montage...";
-    const webmBlob = await renderMontage(images, audioBuffer, currentVoiceScript);
+    const recording = await renderMontage(images, audioBuffer, currentVoiceScript);
 
-    let finalBlob = webmBlob;
-    let extension = "webm";
-    try {
-      status.textContent = "Conversion en MP4 (pour la lecture sur mobile)...";
-      finalBlob = await convertToMp4(webmBlob);
-      extension = "mp4";
-    } catch {
-      // Conversion failed (unsupported browser, etc.) — keep the webm file.
+    let finalBlob = recording.blob;
+    let extension = recording.isMp4 ? "mp4" : "webm";
+
+    if (!recording.isMp4) {
+      try {
+        status.textContent = "Conversion en MP4 (pour la lecture sur mobile)...";
+        finalBlob = await convertToMp4(recording.blob);
+        extension = "mp4";
+      } catch (err) {
+        status.textContent = `Conversion MP4 impossible (${err.message || err}), vidéo gardée en .webm — peut ne pas se lire sur iPhone.`;
+      }
     }
 
     montagePreview.src = URL.createObjectURL(finalBlob);
@@ -631,7 +657,7 @@ async function generateMontage() {
 
     status.textContent = "Génération de la fiche technique...";
     await generateMetadata();
-    status.textContent = "";
+    if (extension === "mp4") status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur montage : ${err.message}`;
   } finally {
@@ -724,13 +750,23 @@ function renderMontage(images, audioBuffer, subtitleText) {
       ...dest.stream.getAudioTracks(),
     ]);
 
-    const mimeType = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find(
-      (t) => MediaRecorder.isTypeSupported(t)
-    );
+    // Safari (iOS 14.3+/macOS) can record straight to MP4 — try that first so
+    // we can skip the (heavy, sometimes unreliable on mobile) ffmpeg.wasm
+    // conversion step entirely. Other browsers fall back to WebM.
+    const candidates = [
+      "video/mp4;codecs=avc1,mp4a",
+      "video/mp4",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ];
+    const mimeType = candidates.find((t) => MediaRecorder.isTypeSupported(t));
+    const isMp4 = mimeType?.startsWith("video/mp4");
     const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
     const chunks = [];
     recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
-    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
+    recorder.onstop = () =>
+      resolve({ blob: new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" }), isMp4 });
     recorder.onerror = (e) => reject(e.error || new Error("Erreur d'enregistrement"));
 
     const durationMs = audioBuffer.duration * 1000;

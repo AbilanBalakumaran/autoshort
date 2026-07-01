@@ -315,13 +315,16 @@ label {
 
 .timeline-handle {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #888;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .timeline-handle svg {
@@ -461,24 +464,25 @@ label {
 
 .copy-row {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: flex-start;
+  width: 100%;
 }
 
 .copy-textarea {
-  flex: 1;
-  min-height: 160px;
-  font-size: 0.85rem;
+  width: 100%;
+  min-height: 220px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  padding: 16px;
 }
 
 .copy-textarea-small {
-  min-height: 80px;
+  min-height: 100px;
 }
 
 .copy-row .icon-btn {
-  flex: 0 0 auto;
-  width: auto;
-  white-space: nowrap;
+  width: 100%;
   background: #333;
 }
 
@@ -565,13 +569,5 @@ button:disabled {
 
   #clear-btn {
     order: 2;
-  }
-
-  .copy-row {
-    flex-direction: column;
-  }
-
-  .copy-row .icon-btn {
-    width: 100%;
   }
 }
