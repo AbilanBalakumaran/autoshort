@@ -1,4 +1,4 @@
-const WORKER_URL = "https://wandering-river-a352.mangateamz2.workers.dev";
+const WORKER_URL = "https://autoshort-2ym.pages.dev";
 
 const form = document.getElementById("prompt-form");
 const promptInput = document.getElementById("prompt");
@@ -47,23 +47,37 @@ form.addEventListener("submit", async (e) => {
 
     if (data.voiceScript) {
       status.textContent = "Génération de l'audio...";
-      const audioRes = await fetch(`${WORKER_URL}/generate-audio`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: data.voiceScript }),
-      });
+      try {
+        const audioRes = await fetch(`${WORKER_URL}/generate-audio`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: data.voiceScript }),
+        });
 
-      if (audioRes.ok) {
+        if (!audioRes.ok) throw new Error("ElevenLabs indisponible");
+
         const audioBlob = await audioRes.blob();
         audioPlayer.src = URL.createObjectURL(audioBlob);
         audioPlayer.hidden = false;
+        status.textContent = "";
+      } catch {
+        status.textContent = "Audio ElevenLabs indisponible, lecture via la voix du navigateur.";
+        speakWithBrowser(data.voiceScript);
       }
+    } else {
+      status.textContent = "";
     }
-
-    status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur : ${err.message}`;
   } finally {
     button.disabled = false;
   }
 });
+
+function speakWithBrowser(text) {
+  if (!("speechSynthesis" in window)) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  utterance.rate = 1.1;
+  window.speechSynthesis.speak(utterance);
+}
