@@ -197,6 +197,17 @@ label {
   margin-top: 0;
 }
 
+#keywords-input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #1a1a2e;
+  color: #f0f0f5;
+  font-size: 1rem;
+  margin-bottom: 16px;
+}
+
 .image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

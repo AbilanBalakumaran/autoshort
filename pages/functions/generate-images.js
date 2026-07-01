@@ -7,7 +7,7 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request }) {
-  const { prompt, showName, characters, realEntities } = await request.json();
+  const { prompt, showName, characters, realEntities, keywords } = await request.json();
 
   if (!prompt) {
     return json({ error: "Missing 'prompt'" }, 400);
@@ -16,10 +16,12 @@ export async function onRequestPost({ request }) {
   const show = showName && showName.toLowerCase() !== "anime" ? showName.trim() : "";
   const characterNames = Array.isArray(characters) ? characters.slice(0, 3) : [];
   const entityNames = Array.isArray(realEntities) ? realEntities.slice(0, 3) : [];
+  const manualKeywords = Array.isArray(keywords) ? keywords.slice(0, 5) : [];
 
-  const [characterImages, entityImages] = await Promise.all([
+  const [characterImages, entityImages, keywordImages] = await Promise.all([
     Promise.all(characterNames.map(fetchCharacterImage)).then((r) => r.filter(Boolean)),
     Promise.all(entityNames.map(fetchWikipediaImage)).then((r) => r.filter(Boolean)),
+    Promise.all(manualKeywords.map(fetchAnyImage)).then((r) => r.filter(Boolean)),
   ]);
 
   let showImages = show ? await fetchRealShowImages(show) : [];
@@ -27,10 +29,9 @@ export async function onRequestPost({ request }) {
     showImages = await fetchRealShowImages(prompt);
   }
 
-  const images = [...new Set([...characterImages, ...entityImages, ...showImages])].slice(
-    0,
-    MAX_IMAGES
-  );
+  const images = [
+    ...new Set([...keywordImages, ...characterImages, ...entityImages, ...showImages]),
+  ].slice(0, MAX_IMAGES);
 
   if (images.length === 0) {
     return json(
@@ -54,6 +55,10 @@ async function fetchCharacterImage(name) {
   } catch {
     return null;
   }
+}
+
+async function fetchAnyImage(keyword) {
+  return (await fetchCharacterImage(keyword)) || (await fetchWikipediaImage(keyword));
 }
 
 async function fetchWikipediaImage(name) {

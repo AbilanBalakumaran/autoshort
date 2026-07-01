@@ -18,6 +18,7 @@ const generateAudioBtn = document.getElementById("generate-audio-btn");
 const nextBtn = document.getElementById("next-btn");
 const imageStep = document.getElementById("image-step");
 const imageGrid = document.getElementById("image-grid");
+const keywordsInput = document.getElementById("keywords-input");
 const regenerateImagesBtn = document.getElementById("regenerate-images-btn");
 const confirmImagesBtn = document.getElementById("confirm-images-btn");
 const montageBtn = document.getElementById("montage-btn");
@@ -306,6 +307,11 @@ async function generateImages() {
 
   try {
     const stylePrompt = currentVisualStyle || currentVoiceScript || promptInput.value;
+    const manualKeywords = keywordsInput.value
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+
     const res = await fetch(`${WORKER_URL}/generate-images`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -314,6 +320,7 @@ async function generateImages() {
         showName: currentShowName,
         characters: currentCharacters,
         realEntities: currentRealEntities,
+        keywords: manualKeywords,
       }),
     });
 
@@ -561,7 +568,7 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
   const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 89.4;
+  const fontSize = 60;
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
