@@ -17,8 +17,9 @@ export async function onRequestPost({ request }) {
   const characterNames = Array.isArray(characters) ? characters.slice(0, 3) : [];
   const entityNames = Array.isArray(realEntities) ? realEntities.slice(0, 3) : [];
 
-  const [characterImages, entityImages] = await Promise.all([
+  const [characterImages, characterFanArt, entityImages] = await Promise.all([
     Promise.all(characterNames.map(fetchCharacterImage)).then((r) => r.filter(Boolean)),
+    Promise.all(characterNames.map(fetchFanArt)).then((r) => r.flat()),
     Promise.all(entityNames.map(fetchRealEntityImages)).then((r) => r.flat()),
   ]);
 
@@ -27,10 +28,11 @@ export async function onRequestPost({ request }) {
     showImages = await fetchRealShowImages(prompt);
   }
 
-  const images = [...new Set([...characterImages, ...entityImages, ...showImages])].slice(
-    0,
-    MAX_IMAGES
-  );
+  const showFanArt = show ? await fetchFanArt(show) : [];
+
+  const images = [
+    ...new Set([...characterImages, ...characterFanArt, ...entityImages, ...showImages, ...showFanArt]),
+  ].slice(0, MAX_IMAGES);
 
   if (images.length === 0) {
     return json(
@@ -53,6 +55,24 @@ async function fetchCharacterImage(name) {
     return data.data?.[0]?.images?.jpg?.image_url || null;
   } catch {
     return null;
+  }
+}
+
+async function fetchFanArt(name) {
+  try {
+    const tag = name.trim().toLowerCase().replace(/\s+/g, "_");
+    const res = await fetch(
+      `https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags=${encodeURIComponent(
+        tag
+      )}&limit=3`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (Array.isArray(data) ? data : [])
+      .map((post) => post.file_url)
+      .filter(Boolean);
+  } catch {
+    return [];
   }
 }
 
