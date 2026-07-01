@@ -73,6 +73,11 @@ export function extractVoiceScript(videoPrompt) {
   return match ? match[1] : "";
 }
 
+export function extractVisualStyle(videoPrompt) {
+  const match = videoPrompt.match(/VISUAL STYLE:\s*([\s\S]*?)\n\n/);
+  return match ? match[1].trim() : "";
+}
+
 export function replaceVoiceScript(videoPrompt, newVoiceScript) {
   return videoPrompt.replace(
     /(VOICE SCRIPT \(read exactly\):\s*")[^"]+(")/,

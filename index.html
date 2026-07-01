@@ -35,9 +35,20 @@
           <span class="audio-label">🎙️ Narration</span>
           <audio id="audio-player" controls></audio>
         </div>
+        <button type="button" id="next-btn" hidden>Suivant →</button>
       </section>
 
       <p id="status"></p>
+
+      <section id="image-step" hidden>
+        <h2>Choisis les images pour le montage</h2>
+        <p class="hint">Sélectionne une ou plusieurs images proposées.</p>
+        <div id="image-grid" class="image-grid"></div>
+        <div class="button-row">
+          <button type="button" id="regenerate-images-btn">🔄 Régénérer</button>
+          <button type="button" id="confirm-images-btn">Valider la sélection</button>
+        </div>
+      </section>
     </section>
 
     <section id="tab-settings" class="tab-panel" hidden>

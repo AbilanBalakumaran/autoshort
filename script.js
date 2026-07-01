@@ -15,6 +15,11 @@ const clearBtn = document.getElementById("clear-btn");
 const audioPlayer = document.getElementById("audio-player");
 const audioWrapper = document.getElementById("audio-wrapper");
 const generateAudioBtn = document.getElementById("generate-audio-btn");
+const nextBtn = document.getElementById("next-btn");
+const imageStep = document.getElementById("image-step");
+const imageGrid = document.getElementById("image-grid");
+const regenerateImagesBtn = document.getElementById("regenerate-images-btn");
+const confirmImagesBtn = document.getElementById("confirm-images-btn");
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
@@ -28,6 +33,8 @@ const PREVIEW_TEXT = "Hey! This is a quick preview of this narrator voice for au
 let selectedVoiceId = "";
 
 let currentVoiceScript = "";
+let currentVisualStyle = "";
+let selectedImages = new Set();
 let defaultTemplate = "";
 
 initTabs();
@@ -43,7 +50,8 @@ function initTabs() {
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.hidden = panel.id !== `tab-${btn.dataset.tab}`;
       });
-      mainEl.classList.toggle("wide", btn.dataset.tab === "settings");
+      const isImageStepVisible = btn.dataset.tab === "generate" && !imageStep.hidden;
+      mainEl.classList.toggle("wide", btn.dataset.tab === "settings" || isImageStepVisible);
     });
   });
 }
@@ -161,9 +169,13 @@ clearBtn.addEventListener("click", () => {
   resultSection.hidden = true;
   audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
+  nextBtn.hidden = true;
+  imageStep.hidden = true;
   status.textContent = "";
   durationEstimate.textContent = "";
   currentVoiceScript = "";
+  currentVisualStyle = "";
+  selectedImages = new Set();
   promptInput.focus();
 });
 
@@ -179,6 +191,8 @@ form.addEventListener("submit", async (e) => {
   resultSection.hidden = true;
   audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
+  nextBtn.hidden = true;
+  imageStep.hidden = true;
 
   try {
     const template = localStorage.getItem(TEMPLATE_STORAGE_KEY) || undefined;
@@ -198,6 +212,7 @@ form.addEventListener("submit", async (e) => {
 
     scriptOutput.textContent = data.voiceScript || "(aucun script vocal extrait)";
     currentVoiceScript = data.voiceScript || "";
+    currentVisualStyle = data.visualStyle || "";
     resultSection.hidden = false;
     durationEstimate.textContent = currentVoiceScript
       ? `Durée estimée : ~${estimateDuration(currentVoiceScript)}s`
@@ -236,8 +251,84 @@ generateAudioBtn.addEventListener("click", async () => {
     speakWithBrowser(currentVoiceScript);
   } finally {
     generateAudioBtn.disabled = false;
+    nextBtn.hidden = false;
   }
 });
+
+nextBtn.addEventListener("click", () => {
+  imageStep.hidden = false;
+  document.querySelector("main").classList.add("wide");
+  nextBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (imageGrid.children.length === 0) {
+    generateImages();
+  }
+});
+
+regenerateImagesBtn.addEventListener("click", generateImages);
+
+confirmImagesBtn.addEventListener("click", () => {
+  if (selectedImages.size === 0) {
+    status.textContent = "Sélectionne au moins une image avant de valider.";
+    return;
+  }
+  status.textContent = `${selectedImages.size} image(s) sélectionnée(s) pour le montage.`;
+});
+
+async function generateImages() {
+  imageGrid.innerHTML = "";
+  selectedImages = new Set();
+  regenerateImagesBtn.disabled = true;
+  confirmImagesBtn.disabled = true;
+  status.textContent = "Génération des images en cours...";
+
+  try {
+    const stylePrompt = currentVisualStyle || currentVoiceScript || promptInput.value;
+    const res = await fetch(`${WORKER_URL}/generate-images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: stylePrompt }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur de génération d'images");
+
+    (data.images || []).forEach((src, i) => addImageCard(src, i));
+    status.textContent = "";
+  } catch (err) {
+    status.textContent = `Erreur images : ${err.message}`;
+  } finally {
+    regenerateImagesBtn.disabled = false;
+    confirmImagesBtn.disabled = false;
+  }
+}
+
+function addImageCard(src, index) {
+  const card = document.createElement("div");
+  card.className = "image-card";
+
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = `Image proposée ${index + 1}`;
+
+  const badge = document.createElement("span");
+  badge.className = "image-check";
+  badge.textContent = "✓";
+
+  card.appendChild(img);
+  card.appendChild(badge);
+
+  card.addEventListener("click", () => {
+    if (selectedImages.has(index)) {
+      selectedImages.delete(index);
+      card.classList.remove("selected");
+    } else {
+      selectedImages.add(index);
+      card.classList.add("selected");
+    }
+  });
+
+  imageGrid.appendChild(card);
+}
 
 function estimateDuration(text) {
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
