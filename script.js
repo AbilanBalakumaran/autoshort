@@ -452,7 +452,11 @@ function renderMontage(images, audioBuffer, subtitleText) {
       }
 
       const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
-      drawCoverImage(ctx, images[index], montageCanvas.width, montageCanvas.height);
+      const segmentElapsed = elapsed - index * perImageMs;
+      const progress = Math.min(1, segmentElapsed / perImageMs);
+      const zoomIn = index % 2 === 0;
+
+      drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn);
       drawSubtitle(ctx, subtitleText, montageCanvas.width, montageCanvas.height);
 
       rafId = requestAnimationFrame(draw);
@@ -464,8 +468,29 @@ function renderMontage(images, audioBuffer, subtitleText) {
   });
 }
 
-function drawCoverImage(ctx, img, canvasW, canvasH) {
-  const scale = Math.max(canvasW / img.width, canvasH / img.height);
+const KEN_BURNS_ZOOM_RANGE = 0.15; // 15% zoom amplitude
+
+function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn) {
+  const zoomScale = zoomIn
+    ? 1 + KEN_BURNS_ZOOM_RANGE * progress
+    : 1 + KEN_BURNS_ZOOM_RANGE * (1 - progress);
+
+  // Blurred, darkened "cover" background fills the whole frame so the sharp
+  // image on top never needs to be cropped or upscaled into blurriness.
+  ctx.save();
+  ctx.filter = "blur(40px) brightness(0.6)";
+  drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, "cover");
+  ctx.restore();
+
+  drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, "contain");
+}
+
+function drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, mode) {
+  const baseScale =
+    mode === "cover"
+      ? Math.max(canvasW / img.width, canvasH / img.height)
+      : Math.min(canvasW / img.width, canvasH / img.height);
+  const scale = baseScale * zoomScale;
   const w = img.width * scale;
   const h = img.height * scale;
   const x = (canvasW - w) / 2;
