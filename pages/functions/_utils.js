@@ -23,7 +23,8 @@ Example of correct length calibration: for a 16-second video (target ~33 words),
 - {{EDITING_STYLE}}: one paragraph describing the editing pacing and focus that fits the mood of the input.
 - {{BACKGROUND_MUSIC}}: one paragraph describing a music style that fits the mood of the input.
 - {{SHOW_NAME}}: the exact name of the specific anime/manga franchise mentioned or clearly implied by the input (e.g. "Blue Lock", "Mushoku Tensei", "One Piece"). If no specific franchise is identifiable, output "anime" instead.
-- {{CHARACTERS}}: a comma-separated list of specific character names explicitly mentioned in the input (e.g. "Isagi, Bachira"). If none are mentioned, output "none".
+- {{CHARACTERS}}: a comma-separated list of specific FICTIONAL anime/manga character names explicitly mentioned in the input (e.g. "Isagi, Bachira"). If none are mentioned, output "none".
+- {{REAL_ENTITIES}}: a comma-separated list of REAL-WORLD named entities explicitly mentioned in the input — this includes manga/anime authors or artists, sports teams (e.g. "Japan national football team"), athletes, or celebrities. Use their most common/searchable name (e.g. "Muneyuki Kaneshiro", "Japan national football team"). If none are mentioned, output "none".
 
 Template to fill in and output verbatim (only replace {{...}}):
 
@@ -71,7 +72,8 @@ FINAL RULE:
 The narrator must speak continuously from the first word to the last word with no silence, no gaps, and no interruptions.
 
 SHOW: {{SHOW_NAME}}
-CHARACTERS: {{CHARACTERS}}`;
+CHARACTERS: {{CHARACTERS}}
+REAL_ENTITIES: {{REAL_ENTITIES}}`;
 
 export function extractVoiceScript(videoPrompt) {
   const match = videoPrompt.match(/VOICE SCRIPT \(read exactly\):\s*"([^"]+)"/);
@@ -89,7 +91,15 @@ export function extractShowName(videoPrompt) {
 }
 
 export function extractCharacters(videoPrompt) {
-  const match = videoPrompt.match(/CHARACTERS:\s*(.+)/);
+  return extractCommaList(videoPrompt, /CHARACTERS:\s*(.+)/);
+}
+
+export function extractRealEntities(videoPrompt) {
+  return extractCommaList(videoPrompt, /REAL_ENTITIES:\s*(.+)/);
+}
+
+function extractCommaList(videoPrompt, pattern) {
+  const match = videoPrompt.match(pattern);
   if (!match) return [];
   const raw = match[1].trim();
   if (!raw || raw.toLowerCase() === "none") return [];

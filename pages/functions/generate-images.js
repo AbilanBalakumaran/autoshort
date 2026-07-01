@@ -1,11 +1,13 @@
 import { json, corsHeaders } from "./_utils.js";
 
+const MAX_IMAGES = 8;
+
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
 }
 
 export async function onRequestPost({ request }) {
-  const { prompt, showName, characters } = await request.json();
+  const { prompt, showName, characters, realEntities } = await request.json();
 
   if (!prompt) {
     return json({ error: "Missing 'prompt'" }, 400);
@@ -13,17 +15,22 @@ export async function onRequestPost({ request }) {
 
   const show = showName && showName.toLowerCase() !== "anime" ? showName.trim() : "";
   const characterNames = Array.isArray(characters) ? characters.slice(0, 3) : [];
+  const entityNames = Array.isArray(realEntities) ? realEntities.slice(0, 3) : [];
 
-  const characterImages = (
-    await Promise.all(characterNames.map(fetchCharacterImage))
-  ).filter(Boolean);
+  const [characterImages, entityImages] = await Promise.all([
+    Promise.all(characterNames.map(fetchCharacterImage)).then((r) => r.filter(Boolean)),
+    Promise.all(entityNames.map(fetchWikipediaImage)).then((r) => r.filter(Boolean)),
+  ]);
 
   let showImages = show ? await fetchRealShowImages(show) : [];
   if (showImages.length === 0) {
     showImages = await fetchRealShowImages(prompt);
   }
 
-  const images = [...new Set([...characterImages, ...showImages])].slice(0, 4);
+  const images = [...new Set([...characterImages, ...entityImages, ...showImages])].slice(
+    0,
+    MAX_IMAGES
+  );
 
   if (images.length === 0) {
     return json(
@@ -44,6 +51,29 @@ async function fetchCharacterImage(name) {
     if (!res.ok) return null;
     const data = await res.json();
     return data.data?.[0]?.images?.jpg?.image_url || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikipediaImage(name) {
+  try {
+    const searchRes = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+        name
+      )}&format=json&srlimit=1&origin=*`
+    );
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    const title = searchData.query?.search?.[0]?.title;
+    if (!title) return null;
+
+    const summaryRes = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
+    );
+    if (!summaryRes.ok) return null;
+    const summaryData = await summaryRes.json();
+    return summaryData.thumbnail?.source || summaryData.originalimage?.source || null;
   } catch {
     return null;
   }
@@ -71,7 +101,7 @@ async function fetchRealShowImages(query) {
     const shuffledGallery = shuffle(galleryUrls);
     const urls = mainImage ? [mainImage, ...shuffledGallery] : shuffledGallery;
 
-    return [...new Set(urls)].slice(0, 4);
+    return [...new Set(urls)].slice(0, MAX_IMAGES);
   } catch {
     return [];
   }

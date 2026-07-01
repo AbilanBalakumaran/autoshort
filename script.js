@@ -41,6 +41,7 @@ let currentVoiceScript = "";
 let currentVisualStyle = "";
 let currentShowName = "";
 let currentCharacters = [];
+let currentRealEntities = [];
 let selectedImages = new Set();
 let defaultTemplate = "";
 
@@ -184,6 +185,7 @@ clearBtn.addEventListener("click", () => {
   currentVisualStyle = "";
   currentShowName = "";
   currentCharacters = [];
+  currentRealEntities = [];
   selectedImages = new Set();
   imageGrid.innerHTML = "";
   montageBtn.hidden = true;
@@ -231,6 +233,7 @@ form.addEventListener("submit", async (e) => {
     currentVisualStyle = data.visualStyle || "";
     currentShowName = data.showName || "";
     currentCharacters = data.characters || [];
+    currentRealEntities = data.realEntities || [];
     resultSection.hidden = false;
     durationEstimate.textContent = currentVoiceScript
       ? `Durée estimée : ~${estimateDuration(currentVoiceScript)}s`
@@ -306,7 +309,12 @@ async function generateImages() {
     const res = await fetch(`${WORKER_URL}/generate-images`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: stylePrompt, showName: currentShowName, characters: currentCharacters }),
+      body: JSON.stringify({
+        prompt: stylePrompt,
+        showName: currentShowName,
+        characters: currentCharacters,
+        realEntities: currentRealEntities,
+      }),
     });
 
     const data = await res.json();
@@ -315,11 +323,19 @@ async function generateImages() {
       throw new Error((data.error || "Erreur de génération d'images") + details);
     }
 
+    const images = [...new Set(data.images || [])];
+
+    // On the very first batch, pre-select up to 5 images so the user doesn't
+    // have to click each one manually.
+    if (selectedImages.size === 0) {
+      images.slice(0, 5).forEach((src) => selectedImages.add(src));
+    }
+
     imageGrid.innerHTML = "";
 
     // Keep previously selected images visible so a "Régénérer" click doesn't lose picks.
     selectedImages.forEach((src) => addImageCard(src));
-    (data.images || []).forEach((src) => {
+    images.forEach((src) => {
       if (!selectedImages.has(src)) addImageCard(src);
     });
 
