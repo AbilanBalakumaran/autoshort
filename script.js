@@ -340,16 +340,18 @@ generateAudioBtn.addEventListener("click", async () => {
       throw new Error(details || `ElevenLabs indisponible (HTTP ${audioRes.status})`);
     }
 
+    const audioSource = audioRes.headers.get("X-Audio-Source");
     const audioBlob = await audioRes.blob();
     audioPlayer.src = URL.createObjectURL(audioBlob);
     audioWrapper.hidden = false;
-    status.textContent = "";
+    status.textContent =
+      audioSource === "workers-ai"
+        ? "ElevenLabs indisponible (quota) — voix de secours Cloudflare utilisée."
+        : "";
 
-    // Only a real audio file lets the montage step work later — the browser's
-    // spoken fallback below has nothing to download/encode into a video.
     goToImageStep();
   } catch (err) {
-    status.textContent = `Audio ElevenLabs indisponible (${err.message}). La voix du navigateur va la lire à titre d'aperçu, réessaie avant de continuer.`;
+    status.textContent = `Audio indisponible (${err.message}). La voix du navigateur va la lire à titre d'aperçu, réessaie avant de continuer.`;
     speakWithBrowser(currentVoiceScript);
   } finally {
     generateAudioBtn.disabled = false;
