@@ -759,14 +759,16 @@ async function getFFmpeg() {
   }
 
   const { FFmpeg } = window.FFmpegWASM;
+  const { toBlobURL } = window.FFmpegUtil;
 
   const ffmpeg = new FFmpeg();
   ffmpeg.on("log", ({ message }) => log(`ffmpeg: ${message}`));
 
   log("Chargement du coeur ffmpeg (wasm, ~30 Mo)...");
+  const coreBase = new URL("vendor/ffmpeg/", document.baseURI).href;
   await ffmpeg.load({
-    coreURL: "vendor/ffmpeg/ffmpeg-core.js",
-    wasmURL: "vendor/ffmpeg/ffmpeg-core.wasm",
+    coreURL: await toBlobURL(`${coreBase}ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${coreBase}ffmpeg-core.wasm`, "application/wasm"),
   });
   log("Coeur ffmpeg chargé");
 
