@@ -5,7 +5,7 @@ export const SYSTEM_PROMPT = `You convert a raw news snippet (in any language) a
 You MUST output ONLY the template below, filled in, with no extra commentary, no markdown code fences, and no explanations. Keep every fixed line EXACTLY as shown. Only replace the {{...}} placeholders.
 
 Rules for the placeholders:
-- {{VOICE_SCRIPT}}: an English rewrite of the input, condensed into ONE punchy sentence, maximum {{MAX_WORDS}} words, written to be read aloud fast by a narrator, in the energetic style of an anime news YouTube Shorts channel. Never exceed {{MAX_WORDS}} words.
+- {{VOICE_SCRIPT}}: an English rewrite of the input, written to be read aloud fast by a narrator, in the energetic style of an anime news YouTube Shorts channel. It MUST be between {{MIN_WORDS}} and {{MAX_WORDS}} words — this is a target range, not just a ceiling: a script shorter than {{MIN_WORDS}} words is WRONG and unacceptable, even if the input news is short. If the input is short, add natural context, color, or reaction to reach the target length. Never exceed {{MAX_WORDS}} words.
 - {{VOICE_DIRECTION_EXTRA}}: 1 to 2 extra bullet lines (each starting with "* ") that match the emotional tone of the news (e.g. "* Emotional but energetic" for sad/heartfelt news, or "* Strong opening hook" / "* Natural enthusiasm" for hype/announcement news). Pick what fits the input.
 - {{VISUAL_STYLE}}: one paragraph describing the cinematic anime visual style relevant to the specific series/topic mentioned in the input.
 - {{EDITING_STYLE}}: one paragraph describing the editing pacing and focus that fits the mood of the input.
@@ -20,7 +20,7 @@ IMPORTANT: This video MUST include a clear human-like voice narrator speaking th
 STRICT REQUIREMENTS:
 
 * MUST include voice narration
-* Maximum {{MAX_WORDS}} words
+* Between {{MIN_WORDS}} and {{MAX_WORDS}} words (never fewer than {{MIN_WORDS}})
 * Fast continuous speech
 * Keep the video strictly under {{DURATION}} seconds
 * No subtitles
@@ -71,9 +71,11 @@ export function wordsForDuration(duration) {
 export function applyDuration(template, duration) {
   const seconds = Number(duration) > 0 ? Number(duration) : DEFAULT_DURATION;
   const maxWords = wordsForDuration(seconds);
+  const minWords = Math.max(1, maxWords - 5);
   return template
     .replaceAll("{{DURATION}}", String(seconds))
-    .replaceAll("{{MAX_WORDS}}", String(maxWords));
+    .replaceAll("{{MAX_WORDS}}", String(maxWords))
+    .replaceAll("{{MIN_WORDS}}", String(minWords));
 }
 
 export function json(body, status = 200) {
