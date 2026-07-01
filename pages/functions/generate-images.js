@@ -20,8 +20,12 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  const images = await generateAiImages(env, prompt, show);
-  return json({ images, source: "ai" });
+  const result = await generateAiImages(env, prompt, show);
+  if (result.error) {
+    return json({ error: "Stability API error", details: result.error }, 502);
+  }
+
+  return json({ images: result.images, source: "ai" });
 }
 
 async function fetchRealShowImages(show) {
@@ -83,8 +87,12 @@ async function generateAiImages(env, prompt, show) {
     }
   );
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const errText = await res.text();
+    return { error: errText };
+  }
 
   const data = await res.json();
-  return (data.artifacts || []).map((a) => `data:image/png;base64,${a.base64}`);
+  const images = (data.artifacts || []).map((a) => `data:image/png;base64,${a.base64}`);
+  return { images };
 }
