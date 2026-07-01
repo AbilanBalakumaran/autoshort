@@ -774,7 +774,9 @@ function loadImage(src) {
   });
 }
 
-const MONTAGE_FPS = 20;
+const MONTAGE_FPS = 12; // kept low deliberately: mobile Safari/Chrome can silently
+// crash/reload the tab (no catchable JS error) if memory use from hundreds of
+// frames + the ~30MB ffmpeg.wasm core gets too high.
 
 // Real-time recording via canvas.captureStream() + MediaRecorder is
 // notoriously unreliable on mobile browsers (silently produces empty/broken
@@ -805,7 +807,7 @@ async function renderMontageWithFFmpeg(images, audioBuffer, audioBlob, subtitleT
     drawKenBurnsFrame(ctx, images[index], canvasW, canvasH, progress, zoomIn, bgCache);
     drawSubtitle(ctx, subtitleWords, canvasW, canvasH, elapsed, durationMs);
 
-    const frameBlob = await new Promise((resolve) => montageCanvas.toBlob(resolve, "image/jpeg", 0.9));
+    const frameBlob = await new Promise((resolve) => montageCanvas.toBlob(resolve, "image/jpeg", 0.8));
     const frameData = new Uint8Array(await frameBlob.arrayBuffer());
     await ffmpeg.writeFile(`frame${String(frame).padStart(5, "0")}.jpg`, frameData);
 
@@ -906,7 +908,7 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
   const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 40; // scaled down to match the 720x1280 render canvas
+  const fontSize = 30; // scaled down to match the 540x960 render canvas
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
