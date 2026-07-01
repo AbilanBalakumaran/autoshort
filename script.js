@@ -629,35 +629,26 @@ async function generateMontage() {
     await document.fonts.load('700 90px "Obelix Pro"');
 
     status.textContent = "Chargement de l'audio...";
-    const audioBuffer = await fetch(audioPlayer.src)
-      .then((r) => r.arrayBuffer())
-      .then((buf) => new AudioContext().decodeAudioData(buf));
+    const audioBlob = await fetch(audioPlayer.src).then((r) => r.blob());
+    const audioBuffer = await new AudioContext().decodeAudioData(await audioBlob.arrayBuffer());
 
-    status.textContent = "Enregistrement du montage...";
-    const recording = await renderMontage(images, audioBuffer, currentVoiceScript);
-
-    let finalBlob = recording.blob;
-    let extension = recording.isMp4 ? "mp4" : "webm";
-
-    if (!recording.isMp4) {
-      try {
-        status.textContent = "Conversion en MP4 (pour la lecture sur mobile)...";
-        finalBlob = await convertToMp4(recording.blob);
-        extension = "mp4";
-      } catch (err) {
-        status.textContent = `Conversion MP4 impossible (${err.message || err}), vidéo gardée en .webm — peut ne pas se lire sur iPhone.`;
-      }
-    }
+    const finalBlob = await renderMontageWithFFmpeg(
+      images,
+      audioBuffer,
+      audioBlob,
+      currentVoiceScript,
+      (msg) => (status.textContent = msg)
+    );
 
     montagePreview.src = URL.createObjectURL(finalBlob);
     montageDownload.href = URL.createObjectURL(finalBlob);
-    montageDownload.download = `autoshort.${extension}`;
+    montageDownload.download = "autoshort.mp4";
     montageResult.hidden = false;
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
     status.textContent = "Génération de la fiche technique...";
     await generateMetadata();
-    if (extension === "mp4") status.textContent = "";
+    status.textContent = "";
   } catch (err) {
     status.textContent = `Erreur montage : ${err.message}`;
   } finally {
@@ -715,15 +706,6 @@ async function getFFmpeg() {
   return ffmpeg;
 }
 
-async function convertToMp4(webmBlob) {
-  const ffmpeg = await getFFmpeg();
-  const inputData = new Uint8Array(await webmBlob.arrayBuffer());
-  await ffmpeg.writeFile("input.webm", inputData);
-  await ffmpeg.exec(["-i", "input.webm", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "output.mp4"]);
-  const data = await ffmpeg.readFile("output.mp4");
-  return new Blob([data.buffer], { type: "video/mp4" });
-}
-
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -734,71 +716,63 @@ function loadImage(src) {
   });
 }
 
-function renderMontage(images, audioBuffer, subtitleText) {
-  return new Promise((resolve, reject) => {
-    const ctx = montageCanvas.getContext("2d");
-    const audioCtx = new AudioContext();
-    const source = audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    const dest = audioCtx.createMediaStreamDestination();
-    source.connect(dest);
-    source.connect(audioCtx.destination);
+const MONTAGE_FPS = 20;
 
-    const videoStream = montageCanvas.captureStream(30);
-    const combinedStream = new MediaStream([
-      ...videoStream.getVideoTracks(),
-      ...dest.stream.getAudioTracks(),
-    ]);
+// Real-time recording via canvas.captureStream() + MediaRecorder is
+// notoriously unreliable on mobile browsers (silently produces empty/broken
+// video tracks on iOS Safari and some Android Chrome versions), even though
+// it works fine on desktop. Rendering each frame to an image and assembling
+// them with ffmpeg.wasm is slower but works identically everywhere.
+async function renderMontageWithFFmpeg(images, audioBuffer, audioBlob, subtitleText, onProgress) {
+  const ctx = montageCanvas.getContext("2d");
+  const canvasW = montageCanvas.width;
+  const canvasH = montageCanvas.height;
 
-    // Safari (iOS 14.3+/macOS) can record straight to MP4 — try that first so
-    // we can skip the (heavy, sometimes unreliable on mobile) ffmpeg.wasm
-    // conversion step entirely. Other browsers fall back to WebM.
-    const candidates = [
-      "video/mp4;codecs=avc1,mp4a",
-      "video/mp4",
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm",
-    ];
-    const mimeType = candidates.find((t) => MediaRecorder.isTypeSupported(t));
-    const isMp4 = mimeType?.startsWith("video/mp4");
-    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
-    const chunks = [];
-    recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
-    recorder.onstop = () =>
-      resolve({ blob: new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" }), isMp4 });
-    recorder.onerror = (e) => reject(e.error || new Error("Erreur d'enregistrement"));
+  const durationMs = audioBuffer.duration * 1000;
+  const perImageMs = durationMs / images.length;
+  const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
+  const bgCache = { img: null, canvas: null };
+  const totalFrames = Math.max(1, Math.ceil((durationMs / 1000) * MONTAGE_FPS));
 
-    const durationMs = audioBuffer.duration * 1000;
-    const perImageMs = durationMs / images.length;
-    const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
-    const startTime = performance.now();
-    const bgCache = { img: null, canvas: null };
-    let rafId;
+  const ffmpeg = await getFFmpeg();
 
-    function draw() {
-      const elapsed = performance.now() - startTime;
-      if (elapsed >= durationMs) {
-        cancelAnimationFrame(rafId);
-        recorder.stop();
-        return;
-      }
+  for (let frame = 0; frame < totalFrames; frame++) {
+    const elapsed = (frame / MONTAGE_FPS) * 1000;
+    const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
+    const segmentElapsed = elapsed - index * perImageMs;
+    const progress = Math.min(1, segmentElapsed / perImageMs);
+    const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
 
-      const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
-      const segmentElapsed = elapsed - index * perImageMs;
-      const progress = Math.min(1, segmentElapsed / perImageMs);
-      const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
+    drawKenBurnsFrame(ctx, images[index], canvasW, canvasH, progress, zoomIn, bgCache);
+    drawSubtitle(ctx, subtitleWords, canvasW, canvasH, elapsed, durationMs);
 
-      drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
-      drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs);
+    const frameBlob = await new Promise((resolve) => montageCanvas.toBlob(resolve, "image/jpeg", 0.9));
+    const frameData = new Uint8Array(await frameBlob.arrayBuffer());
+    await ffmpeg.writeFile(`frame${String(frame).padStart(5, "0")}.jpg`, frameData);
 
-      rafId = requestAnimationFrame(draw);
+    if (frame % 5 === 0) {
+      onProgress(`Rendu des images... ${Math.round(((frame + 1) / totalFrames) * 100)}%`);
     }
+  }
 
-    recorder.start();
-    source.start();
-    draw();
-  });
+  onProgress("Assemblage de la vidéo...");
+  const audioData = new Uint8Array(await audioBlob.arrayBuffer());
+  await ffmpeg.writeFile("audio.mp3", audioData);
+
+  await ffmpeg.exec([
+    "-framerate", String(MONTAGE_FPS),
+    "-i", "frame%05d.jpg",
+    "-i", "audio.mp3",
+    "-c:v", "libx264",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-shortest",
+    "-movflags", "+faststart",
+    "output.mp4",
+  ]);
+
+  const data = await ffmpeg.readFile("output.mp4");
+  return new Blob([data.buffer], { type: "video/mp4" });
 }
 
 const KEN_BURNS_ZOOM_RANGE = 0.15; // 15% zoom amplitude
@@ -871,7 +845,7 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
   const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 60;
+  const fontSize = 40; // scaled down to match the 720x1280 render canvas
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
