@@ -383,6 +383,8 @@ async function generateMontage() {
     const imageUrls = [...selectedImages];
     const images = await Promise.all(imageUrls.map(loadImage));
 
+    await document.fonts.load('900 90px "Obelix Pro"');
+
     status.textContent = "Chargement de l'audio...";
     const audioBuffer = await fetch(audioPlayer.src)
       .then((r) => r.arrayBuffer())
@@ -516,7 +518,7 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   const scale = bounceEaseOut(bounceProgress);
 
   const fontSize = 90;
-  ctx.font = `900 ${fontSize}px "Arial Black", system-ui, sans-serif`;
+  ctx.font = `900 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
