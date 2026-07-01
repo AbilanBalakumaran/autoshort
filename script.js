@@ -561,7 +561,7 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
   const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 90;
+  const fontSize = 89.4;
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
