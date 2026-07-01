@@ -48,6 +48,15 @@
           <button type="button" id="regenerate-images-btn">🔄 Régénérer</button>
           <button type="button" id="confirm-images-btn">Valider la sélection</button>
         </div>
+
+        <button type="button" id="montage-btn" hidden>🎬 Générer le montage</button>
+
+        <canvas id="montage-canvas" width="1080" height="1920" hidden></canvas>
+
+        <div id="montage-result" hidden>
+          <video id="montage-preview" controls playsinline></video>
+          <a id="montage-download" class="download-link" download="autoshort.webm">⬇️ Télécharger la vidéo</a>
+        </div>
       </section>
     </section>
 

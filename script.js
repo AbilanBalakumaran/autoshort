@@ -20,6 +20,11 @@ const imageStep = document.getElementById("image-step");
 const imageGrid = document.getElementById("image-grid");
 const regenerateImagesBtn = document.getElementById("regenerate-images-btn");
 const confirmImagesBtn = document.getElementById("confirm-images-btn");
+const montageBtn = document.getElementById("montage-btn");
+const montageCanvas = document.getElementById("montage-canvas");
+const montageResult = document.getElementById("montage-result");
+const montagePreview = document.getElementById("montage-preview");
+const montageDownload = document.getElementById("montage-download");
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
@@ -178,6 +183,9 @@ clearBtn.addEventListener("click", () => {
   currentVisualStyle = "";
   currentShowName = "";
   selectedImages = new Set();
+  imageGrid.innerHTML = "";
+  montageBtn.hidden = true;
+  montageResult.hidden = true;
   promptInput.focus();
 });
 
@@ -195,6 +203,10 @@ form.addEventListener("submit", async (e) => {
   audioPlayer.removeAttribute("src");
   nextBtn.hidden = true;
   imageStep.hidden = true;
+  montageBtn.hidden = true;
+  montageResult.hidden = true;
+  selectedImages = new Set();
+  imageGrid.innerHTML = "";
 
   try {
     const template = localStorage.getItem(TEMPLATE_STORAGE_KEY) || undefined;
@@ -275,7 +287,11 @@ confirmImagesBtn.addEventListener("click", () => {
     return;
   }
   status.textContent = `${selectedImages.size} image(s) sélectionnée(s) pour le montage.`;
+  montageBtn.hidden = false;
+  montageBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
+
+montageBtn.addEventListener("click", generateMontage);
 
 async function generateImages() {
   regenerateImagesBtn.disabled = true;
@@ -352,4 +368,144 @@ function speakWithBrowser(text) {
   utterance.lang = "en-US";
   utterance.rate = 1.1;
   window.speechSynthesis.speak(utterance);
+}
+
+async function generateMontage() {
+  if (selectedImages.size === 0 || !audioPlayer.src) {
+    status.textContent = "Il faut au moins une image et un audio généré avant le montage.";
+    return;
+  }
+
+  montageBtn.disabled = true;
+  status.textContent = "Chargement des images...";
+
+  try {
+    const imageUrls = [...selectedImages];
+    const images = await Promise.all(imageUrls.map(loadImage));
+
+    status.textContent = "Chargement de l'audio...";
+    const audioBuffer = await fetch(audioPlayer.src)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => new AudioContext().decodeAudioData(buf));
+
+    status.textContent = "Enregistrement du montage...";
+    const blob = await renderMontage(images, audioBuffer, currentVoiceScript);
+
+    montagePreview.src = URL.createObjectURL(blob);
+    montageDownload.href = URL.createObjectURL(blob);
+    montageResult.hidden = false;
+    montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    status.textContent = "";
+  } catch (err) {
+    status.textContent = `Erreur montage : ${err.message}`;
+  } finally {
+    montageBtn.disabled = false;
+  }
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Impossible de charger une image (${src})`));
+    img.src = src;
+  });
+}
+
+function renderMontage(images, audioBuffer, subtitleText) {
+  return new Promise((resolve, reject) => {
+    const ctx = montageCanvas.getContext("2d");
+    const audioCtx = new AudioContext();
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    const dest = audioCtx.createMediaStreamDestination();
+    source.connect(dest);
+    source.connect(audioCtx.destination);
+
+    const videoStream = montageCanvas.captureStream(30);
+    const combinedStream = new MediaStream([
+      ...videoStream.getVideoTracks(),
+      ...dest.stream.getAudioTracks(),
+    ]);
+
+    const mimeType = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find(
+      (t) => MediaRecorder.isTypeSupported(t)
+    );
+    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
+    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
+    recorder.onerror = (e) => reject(e.error || new Error("Erreur d'enregistrement"));
+
+    const durationMs = audioBuffer.duration * 1000;
+    const perImageMs = durationMs / images.length;
+    const startTime = performance.now();
+    let rafId;
+
+    function draw() {
+      const elapsed = performance.now() - startTime;
+      if (elapsed >= durationMs) {
+        cancelAnimationFrame(rafId);
+        recorder.stop();
+        return;
+      }
+
+      const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
+      drawCoverImage(ctx, images[index], montageCanvas.width, montageCanvas.height);
+      drawSubtitle(ctx, subtitleText, montageCanvas.width, montageCanvas.height);
+
+      rafId = requestAnimationFrame(draw);
+    }
+
+    recorder.start();
+    source.start();
+    draw();
+  });
+}
+
+function drawCoverImage(ctx, img, canvasW, canvasH) {
+  const scale = Math.max(canvasW / img.width, canvasH / img.height);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  const x = (canvasW - w) / 2;
+  const y = (canvasH - h) / 2;
+  ctx.drawImage(img, x, y, w, h);
+}
+
+function drawSubtitle(ctx, text, canvasW, canvasH) {
+  if (!text) return;
+
+  const fontSize = 46;
+  ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const maxWidth = canvasW - 120;
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+
+  const lineHeight = fontSize * 1.3;
+  const blockHeight = lines.length * lineHeight + 60;
+  const blockY = canvasH - blockHeight - 80;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(0, blockY, canvasW, blockHeight);
+
+  ctx.fillStyle = "#ffffff";
+  lines.forEach((l, i) => {
+    ctx.fillText(l, canvasW / 2, blockY + 30 + i * lineHeight + lineHeight / 2);
+  });
 }

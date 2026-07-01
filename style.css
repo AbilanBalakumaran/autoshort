@@ -243,6 +243,45 @@ label {
   display: flex;
 }
 
+#montage-btn {
+  margin-top: 16px;
+  width: 100%;
+  background: linear-gradient(135deg, #ff5c8a, #6c5ce7);
+}
+
+#montage-canvas {
+  display: none;
+}
+
+#montage-result {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(108, 92, 231, 0.25), rgba(255, 92, 138, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#montage-preview {
+  width: 100%;
+  max-width: 320px;
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 10px;
+  aspect-ratio: 9 / 16;
+  background: #000;
+}
+
+.download-link {
+  display: block;
+  text-align: center;
+  padding: 12px;
+  border-radius: 8px;
+  background: #6c5ce7;
+  color: white;
+  text-decoration: none;
+  font-size: 1rem;
+}
+
 form {
   display: flex;
   flex-direction: column;
