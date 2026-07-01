@@ -339,12 +339,15 @@ generateAudioBtn.addEventListener("click", async () => {
     audioPlayer.src = URL.createObjectURL(audioBlob);
     audioWrapper.hidden = false;
     status.textContent = "";
+    // Only a real audio file lets the montage step work later — the browser's
+    // spoken fallback below has nothing to download/encode into a video.
+    nextBtn.hidden = false;
   } catch {
-    status.textContent = "Audio ElevenLabs indisponible, lecture via la voix du navigateur.";
+    status.textContent =
+      "Audio ElevenLabs indisponible. La voix du navigateur va la lire à titre d'aperçu, mais réessaie avant de continuer — le montage a besoin d'un vrai fichier audio.";
     speakWithBrowser(currentVoiceScript);
   } finally {
     generateAudioBtn.disabled = false;
-    nextBtn.hidden = false;
   }
 });
 
