@@ -757,7 +757,14 @@ async function getFFmpeg() {
 
   log("Téléchargement du coeur ffmpeg (wasm, ~30 Mo)...");
   const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+  // The worker script must also be fetched as a same-origin blob: URL —
+  // ffmpeg.js otherwise tries to spawn a Worker pointing straight at
+  // unpkg.com, which browsers block as a cross-origin Worker (SecurityError).
   await ffmpeg.load({
+    classWorkerURL: await toBlobURL(
+      "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js",
+      "text/javascript"
+    ),
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
   });
