@@ -5,11 +5,13 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request, env }) {
-  const { text } = await request.json();
+  const { text, template } = await request.json();
 
   if (!text) {
     return json({ error: "Missing 'text'" }, 400);
   }
+
+  const systemPrompt = template && template.trim() ? template : SYSTEM_PROMPT;
 
   const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -21,7 +23,7 @@ export async function onRequestPost({ request, env }) {
       model: "llama-3.3-70b-versatile",
       temperature: 0.7,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: text },
       ],
     }),

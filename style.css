@@ -21,6 +21,45 @@ h1 {
   margin-bottom: 4px;
 }
 
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  border-bottom: 1px solid #333;
+}
+
+.tab-btn {
+  flex: none;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: #aaa;
+}
+
+.tab-btn.active {
+  background: #1a1a2e;
+  color: #f0f0f5;
+}
+
+.template-textarea {
+  min-height: 320px;
+  margin-top: 16px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: pre;
+}
+
+#settings-status {
+  margin-top: 8px;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+#generate-audio-btn {
+  margin-top: 12px;
+  width: 100%;
+}
+
 form {
   display: flex;
   flex-direction: column;

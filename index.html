@@ -9,23 +9,42 @@
 <body>
   <main>
     <h1>🎌 autoshort</h1>
-    <p>Colle une actu anime/manga → reçois un prompt vidéo prêt à l'emploi.</p>
 
-    <form id="prompt-form">
-      <textarea id="prompt" placeholder="Colle ici le texte de l'actu (ex: annonce, réaction, news manga...)" required></textarea>
-      <div class="button-row">
-        <button type="submit">Générer le prompt</button>
-        <button type="button" id="clear-btn">Vider</button>
-      </div>
-    </form>
+    <nav class="tabs">
+      <button type="button" class="tab-btn active" data-tab="generate">Générer</button>
+      <button type="button" class="tab-btn" data-tab="settings">Settings</button>
+    </nav>
 
-    <section id="result" hidden>
-      <h2>Prompt vidéo généré</h2>
-      <pre id="script-output"></pre>
-      <audio id="audio-player" controls hidden></audio>
+    <section id="tab-generate" class="tab-panel">
+      <p>Colle une actu anime/manga → reçois un prompt vidéo prêt à l'emploi.</p>
+
+      <form id="prompt-form">
+        <textarea id="prompt" placeholder="Colle ici le texte de l'actu (ex: annonce, réaction, news manga...)" required></textarea>
+        <div class="button-row">
+          <button type="submit">Générer le script</button>
+          <button type="button" id="clear-btn">Vider</button>
+        </div>
+      </form>
+
+      <section id="result" hidden>
+        <h2>Prompt vidéo généré</h2>
+        <pre id="script-output"></pre>
+        <button type="button" id="generate-audio-btn">Générer l'audio</button>
+        <audio id="audio-player" controls hidden></audio>
+      </section>
+
+      <p id="status"></p>
     </section>
 
-    <p id="status"></p>
+    <section id="tab-settings" class="tab-panel" hidden>
+      <p>Personnalise le template utilisé pour générer le prompt vidéo.</p>
+      <textarea id="template-input" class="template-textarea"></textarea>
+      <div class="button-row">
+        <button type="button" id="save-template-btn">Enregistrer</button>
+        <button type="button" id="reset-template-btn">Réinitialiser</button>
+      </div>
+      <p id="settings-status"></p>
+    </section>
   </main>
 
   <script src="script.js"></script>
