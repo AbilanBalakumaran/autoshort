@@ -98,7 +98,7 @@ form.addEventListener("submit", async (e) => {
       throw new Error(data.error || "Erreur inconnue");
     }
 
-    scriptOutput.textContent = data.videoPrompt;
+    scriptOutput.textContent = data.voiceScript || "(aucun script vocal extrait)";
     currentVoiceScript = data.voiceScript || "";
     resultSection.hidden = false;
     status.textContent = "";
