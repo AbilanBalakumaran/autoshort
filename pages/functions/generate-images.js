@@ -1,6 +1,6 @@
 import { json, corsHeaders } from "./_utils.js";
 
-const MAX_IMAGES = 8;
+const MAX_IMAGES = 7;
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });

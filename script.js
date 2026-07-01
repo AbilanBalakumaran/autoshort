@@ -477,7 +477,7 @@ function renderMontage(images, audioBuffer, subtitleText) {
       const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
       const segmentElapsed = elapsed - index * perImageMs;
       const progress = Math.min(1, segmentElapsed / perImageMs);
-      const zoomIn = index % 2 === 0;
+      const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
 
       drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
       drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs);
