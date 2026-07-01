@@ -5,11 +5,14 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request, env }) {
-  const { prompt } = await request.json();
+  const { prompt, showName } = await request.json();
 
   if (!prompt) {
     return json({ error: "Missing 'prompt'" }, 400);
   }
+
+  const show = showName && showName.toLowerCase() !== "anime" ? showName : "";
+  const showPrefix = show ? `${show} anime, in the art style of ${show}, ` : "";
 
   const res = await fetch(
     "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
@@ -22,8 +25,8 @@ export async function onRequestPost({ request, env }) {
       },
       body: JSON.stringify({
         text_prompts: [
-          { text: `${prompt}, anime style, cinematic, vertical composition, high detail`, weight: 1 },
-          { text: "text, subtitles, watermark, blurry, low quality", weight: -1 },
+          { text: `${showPrefix}${prompt}, anime style, cinematic, vertical composition, high detail, portrait orientation`, weight: 1 },
+          { text: "text, subtitles, watermark, blurry, low quality, landscape orientation", weight: -1 },
         ],
         samples: 4,
         width: 768,

@@ -22,6 +22,7 @@ Example of correct length calibration: for a 16-second video (target ~33 words),
 - {{VISUAL_STYLE}}: one paragraph describing the cinematic anime visual style relevant to the specific series/topic mentioned in the input.
 - {{EDITING_STYLE}}: one paragraph describing the editing pacing and focus that fits the mood of the input.
 - {{BACKGROUND_MUSIC}}: one paragraph describing a music style that fits the mood of the input.
+- {{SHOW_NAME}}: the exact name of the specific anime/manga franchise mentioned or clearly implied by the input (e.g. "Blue Lock", "Mushoku Tensei", "One Piece"). If no specific franchise is identifiable, output "anime" instead.
 
 Template to fill in and output verbatim (only replace {{...}}):
 
@@ -66,7 +67,9 @@ BACKGROUND MUSIC:
 {{BACKGROUND_MUSIC}}
 
 FINAL RULE:
-The narrator must speak continuously from the first word to the last word with no silence, no gaps, and no interruptions.`;
+The narrator must speak continuously from the first word to the last word with no silence, no gaps, and no interruptions.
+
+SHOW: {{SHOW_NAME}}`;
 
 export function extractVoiceScript(videoPrompt) {
   const match = videoPrompt.match(/VOICE SCRIPT \(read exactly\):\s*"([^"]+)"/);
@@ -75,6 +78,11 @@ export function extractVoiceScript(videoPrompt) {
 
 export function extractVisualStyle(videoPrompt) {
   const match = videoPrompt.match(/VISUAL STYLE:\s*([\s\S]*?)\n\n/);
+  return match ? match[1].trim() : "";
+}
+
+export function extractShowName(videoPrompt) {
+  const match = videoPrompt.match(/SHOW:\s*(.+)/);
   return match ? match[1].trim() : "";
 }
 
