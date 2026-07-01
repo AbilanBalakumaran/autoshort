@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnimaShorts AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>🎌 AnimaShorts AI</h1>
+    <p>Un prompt → un script de short anime.</p>
+
+    <form id="prompt-form">
+      <textarea id="prompt" placeholder="Ex: Un ninja qui découvre un pouvoir caché" required></textarea>
+      <button type="submit">Générer le script</button>
+    </form>
+
+    <section id="result" hidden>
+      <h2>Script généré</h2>
+      <p id="script-output"></p>
+    </section>
+
+    <p id="status"></p>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
