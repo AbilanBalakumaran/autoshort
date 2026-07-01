@@ -30,8 +30,11 @@
         <h2>Script vocal généré</h2>
         <pre id="script-output"></pre>
         <p id="duration-estimate"></p>
-        <button type="button" id="generate-audio-btn">Générer l'audio</button>
-        <audio id="audio-player" controls hidden></audio>
+        <button type="button" id="generate-audio-btn">🔊 Générer l'audio</button>
+        <div id="audio-wrapper" hidden>
+          <span class="audio-label">🎙️ Narration</span>
+          <audio id="audio-player" controls></audio>
+        </div>
       </section>
 
       <p id="status"></p>

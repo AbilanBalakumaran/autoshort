@@ -12,6 +12,7 @@ const durationEstimate = document.getElementById("duration-estimate");
 const status = document.getElementById("status");
 const clearBtn = document.getElementById("clear-btn");
 const audioPlayer = document.getElementById("audio-player");
+const audioWrapper = document.getElementById("audio-wrapper");
 const generateAudioBtn = document.getElementById("generate-audio-btn");
 
 const templateInput = document.getElementById("template-input");
@@ -76,7 +77,7 @@ resetTemplateBtn.addEventListener("click", () => {
 clearBtn.addEventListener("click", () => {
   promptInput.value = "";
   resultSection.hidden = true;
-  audioPlayer.hidden = true;
+  audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
   status.textContent = "";
   durationEstimate.textContent = "";
@@ -94,7 +95,7 @@ form.addEventListener("submit", async (e) => {
   button.disabled = true;
   status.textContent = "Génération du script en cours...";
   resultSection.hidden = true;
-  audioPlayer.hidden = true;
+  audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
 
   try {
@@ -132,7 +133,7 @@ generateAudioBtn.addEventListener("click", async () => {
 
   generateAudioBtn.disabled = true;
   status.textContent = "Génération de l'audio...";
-  audioPlayer.hidden = true;
+  audioWrapper.hidden = true;
 
   try {
     const audioRes = await fetch(`${WORKER_URL}/generate-audio`, {
@@ -145,7 +146,7 @@ generateAudioBtn.addEventListener("click", async () => {
 
     const audioBlob = await audioRes.blob();
     audioPlayer.src = URL.createObjectURL(audioBlob);
-    audioPlayer.hidden = false;
+    audioWrapper.hidden = false;
     status.textContent = "";
   } catch {
     status.textContent = "Audio ElevenLabs indisponible, lecture via la voix du navigateur.";
