@@ -7,32 +7,19 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost({ request }) {
-  const { prompt, showName, characters, realEntities } = await request.json();
+  const { prompt, showName } = await request.json();
 
   if (!prompt) {
     return json({ error: "Missing 'prompt'" }, 400);
   }
 
   const show = showName && showName.toLowerCase() !== "anime" ? showName.trim() : "";
-  const characterNames = Array.isArray(characters) ? characters.slice(0, 3) : [];
-  const entityNames = Array.isArray(realEntities) ? realEntities.slice(0, 3) : [];
 
-  const [characterImages, characterFanArt, entityImages] = await Promise.all([
-    Promise.all(characterNames.map(fetchCharacterImage)).then((r) => r.filter(Boolean)),
-    Promise.all(characterNames.map(fetchFanArt)).then((r) => r.flat()),
-    Promise.all(entityNames.map(fetchRealEntityImages)).then((r) => r.flat()),
-  ]);
+  let images = show ? await fetchRealShowImages(show) : [];
 
-  let showImages = show ? await fetchRealShowImages(show) : [];
-  if (showImages.length === 0) {
-    showImages = await fetchRealShowImages(prompt);
+  if (images.length === 0) {
+    images = await fetchRealShowImages(prompt);
   }
-
-  const showFanArt = show ? await fetchFanArt(show) : [];
-
-  const images = [
-    ...new Set([...characterImages, ...characterFanArt, ...entityImages, ...showImages, ...showFanArt]),
-  ].slice(0, MAX_IMAGES);
 
   if (images.length === 0) {
     return json(
@@ -45,79 +32,6 @@ export async function onRequestPost({ request }) {
   }
 
   return json({ images, source: "web" });
-}
-
-async function fetchCharacterImage(name) {
-  try {
-    const res = await fetch(`https://api.jikan.moe/v4/characters?q=${encodeURIComponent(name)}&limit=1`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.data?.[0]?.images?.jpg?.image_url || null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchFanArt(name) {
-  try {
-    const tag = name.trim().toLowerCase().replace(/\s+/g, "_");
-    const res = await fetch(
-      `https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags=${encodeURIComponent(
-        tag
-      )}&limit=3`
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (Array.isArray(data) ? data : [])
-      .map((post) => post.file_url)
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-async function fetchRealEntityImages(name) {
-  const fromOpenverse = await fetchOpenverseImages(name);
-  if (fromOpenverse.length > 0) return fromOpenverse;
-
-  const fromWikipedia = await fetchWikipediaImage(name);
-  return fromWikipedia ? [fromWikipedia] : [];
-}
-
-async function fetchOpenverseImages(name) {
-  try {
-    const res = await fetch(
-      `https://api.openverse.org/v1/images/?q=${encodeURIComponent(name)}&page_size=3`
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map((r) => r.url).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-async function fetchWikipediaImage(name) {
-  try {
-    const searchRes = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-        name
-      )}&format=json&srlimit=1&origin=*`
-    );
-    if (!searchRes.ok) return null;
-    const searchData = await searchRes.json();
-    const title = searchData.query?.search?.[0]?.title;
-    if (!title) return null;
-
-    const summaryRes = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
-    );
-    if (!summaryRes.ok) return null;
-    const summaryData = await summaryRes.json();
-    return summaryData.thumbnail?.source || summaryData.originalimage?.source || null;
-  } catch {
-    return null;
-  }
 }
 
 async function fetchRealShowImages(query) {

@@ -313,8 +313,6 @@ async function generateImages() {
       body: JSON.stringify({
         prompt: stylePrompt,
         showName: currentShowName,
-        characters: currentCharacters,
-        realEntities: currentRealEntities,
       }),
     });
 
