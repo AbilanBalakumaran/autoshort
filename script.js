@@ -18,14 +18,14 @@ const generateAudioBtn = document.getElementById("generate-audio-btn");
 
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
-const voiceSelect = document.getElementById("voice-select");
-const previewVoiceBtn = document.getElementById("preview-voice-btn");
+const voiceList = document.getElementById("voice-list");
 const voicePreview = document.getElementById("voice-preview");
 const saveTemplateBtn = document.getElementById("save-template-btn");
 const resetTemplateBtn = document.getElementById("reset-template-btn");
 const settingsStatus = document.getElementById("settings-status");
 
-let voicesById = {};
+const PREVIEW_TEXT = "Hey! This is a quick preview of this narrator voice for autoshort.";
+let selectedVoiceId = "";
 
 let currentVoiceScript = "";
 let defaultTemplate = "";
@@ -67,39 +67,77 @@ async function initSettings() {
 }
 
 async function loadVoices() {
+  selectedVoiceId = localStorage.getItem(VOICE_STORAGE_KEY) || "";
+  voiceList.innerHTML = "";
+
+  addVoiceCard({ voice_id: "", name: "Par défaut", tag: "Adam" });
+
   try {
     const res = await fetch(`${WORKER_URL}/voices`);
     const data = await res.json();
-
-    (data.voices || []).forEach((v) => {
-      voicesById[v.voice_id] = v;
-      const option = document.createElement("option");
-      option.value = v.voice_id;
-      option.textContent = `${v.name}${v.category ? " · " + v.category : ""}`;
-      voiceSelect.appendChild(option);
-    });
-
-    const savedVoice = localStorage.getItem(VOICE_STORAGE_KEY);
-    if (savedVoice && voicesById[savedVoice]) {
-      voiceSelect.value = savedVoice;
-    }
+    (data.voices || []).forEach(addVoiceCard);
   } catch {
-    // keep only the "Par défaut" option if the voice list can't be fetched
+    // only the default card stays if the voice list can't be fetched
   }
 }
 
-previewVoiceBtn.addEventListener("click", () => {
-  const voice = voicesById[voiceSelect.value];
-  if (!voice || !voice.preview_url) return;
-  voicePreview.src = voice.preview_url;
-  voicePreview.play();
-});
+function addVoiceCard(voice) {
+  const card = document.createElement("div");
+  card.className = "voice-card" + (selectedVoiceId === voice.voice_id ? " selected" : "");
+  card.dataset.voiceId = voice.voice_id;
+
+  const info = document.createElement("div");
+  info.className = "voice-card-info";
+  info.innerHTML = `<strong>${voice.name}</strong><span>${voice.tag || ""}</span>`;
+
+  const previewBtn = document.createElement("button");
+  previewBtn.type = "button";
+  previewBtn.className = "voice-preview-btn";
+  previewBtn.textContent = "▶";
+  previewBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    playVoicePreview(voice.voice_id, previewBtn);
+  });
+
+  card.appendChild(info);
+  card.appendChild(previewBtn);
+
+  card.addEventListener("click", () => {
+    selectedVoiceId = voice.voice_id;
+    document.querySelectorAll(".voice-card").forEach((c) => c.classList.remove("selected"));
+    card.classList.add("selected");
+  });
+
+  voiceList.appendChild(card);
+}
+
+async function playVoicePreview(voiceId, btn) {
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    const res = await fetch(`${WORKER_URL}/generate-audio`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: PREVIEW_TEXT, voiceId: voiceId || undefined }),
+    });
+    if (!res.ok) throw new Error("preview failed");
+    const blob = await res.blob();
+    voicePreview.src = URL.createObjectURL(blob);
+    voicePreview.hidden = false;
+    await voicePreview.play();
+  } catch {
+    speakWithBrowser(PREVIEW_TEXT);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶";
+  }
+}
 
 saveTemplateBtn.addEventListener("click", () => {
   localStorage.setItem(TEMPLATE_STORAGE_KEY, templateInput.value);
   localStorage.setItem(DURATION_STORAGE_KEY, durationInput.value || DEFAULT_DURATION);
-  if (voiceSelect.value) {
-    localStorage.setItem(VOICE_STORAGE_KEY, voiceSelect.value);
+  if (selectedVoiceId) {
+    localStorage.setItem(VOICE_STORAGE_KEY, selectedVoiceId);
   } else {
     localStorage.removeItem(VOICE_STORAGE_KEY);
   }
@@ -110,10 +148,10 @@ saveTemplateBtn.addEventListener("click", () => {
 resetTemplateBtn.addEventListener("click", () => {
   templateInput.value = defaultTemplate;
   durationInput.value = DEFAULT_DURATION;
-  voiceSelect.value = "";
   localStorage.removeItem(TEMPLATE_STORAGE_KEY);
   localStorage.removeItem(DURATION_STORAGE_KEY);
   localStorage.removeItem(VOICE_STORAGE_KEY);
+  loadVoices();
   settingsStatus.textContent = "Template réinitialisé.";
   setTimeout(() => (settingsStatus.textContent = ""), 2000);
 });

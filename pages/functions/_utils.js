@@ -1,5 +1,15 @@
 export const ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"; // Adam
 
+// Curated list of well-known ElevenLabs premade voices, shown in Settings
+// regardless of what's in the account's own voice library.
+export const CURATED_VOICES = [
+  { voice_id: "pNInz6obpgDQGcFmaJgB", name: "Adam", tag: "Homme · Grave" },
+  { voice_id: "ErXwobaYiN019PkySvjV", name: "Antoni", tag: "Homme · Chaleureux" },
+  { voice_id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", tag: "Homme · Énergique" },
+  { voice_id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", tag: "Femme · Douce" },
+  { voice_id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", tag: "Femme · Expressive" },
+];
+
 export const SYSTEM_PROMPT = `You convert a raw news snippet (in any language) about anime/manga into a single, ready-to-use AI video generation prompt.
 
 You MUST output ONLY the template below, filled in, with no extra commentary, no markdown code fences, and no explanations. Keep every fixed line EXACTLY as shown. Only replace the {{...}} placeholders.
