@@ -293,7 +293,10 @@ async function generateImages() {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erreur de génération d'images");
+    if (!res.ok) {
+      const details = data.details ? ` — ${data.details}` : "";
+      throw new Error((data.error || "Erreur de génération d'images") + details);
+    }
 
     (data.images || []).forEach((src, i) => addImageCard(src, i));
     status.textContent = "";
