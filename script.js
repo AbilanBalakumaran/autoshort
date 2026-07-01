@@ -444,6 +444,7 @@ function renderMontage(images, audioBuffer, subtitleText) {
     const perImageMs = durationMs / images.length;
     const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
     const startTime = performance.now();
+    const bgCache = { img: null, canvas: null };
     let rafId;
 
     function draw() {
@@ -459,7 +460,7 @@ function renderMontage(images, audioBuffer, subtitleText) {
       const progress = Math.min(1, segmentElapsed / perImageMs);
       const zoomIn = index % 2 === 0;
 
-      drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn);
+      drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
       drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs);
 
       rafId = requestAnimationFrame(draw);
@@ -475,7 +476,7 @@ const KEN_BURNS_ZOOM_RANGE = 0.15; // 15% zoom amplitude
 
 const KEN_BURNS_SPEED = 0.5; // halved speed: zoom only covers half its range per image
 
-function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn) {
+function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn, bgCache) {
   const eased = progress * KEN_BURNS_SPEED;
   const zoomScale = zoomIn
     ? 1 + KEN_BURNS_ZOOM_RANGE * eased
@@ -483,12 +484,36 @@ function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn) {
 
   // Blurred, darkened "cover" background fills the whole frame so the sharp
   // image on top never needs to be cropped or upscaled into blurriness.
-  ctx.save();
-  ctx.filter = "blur(40px) brightness(0.6)";
-  drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, "cover");
-  ctx.restore();
+  // The blur itself is expensive, so it's pre-rendered once per image and
+  // cached instead of re-applying the filter on every animation frame
+  // (which was causing real-time recording to stutter/freeze).
+  const blurredBg = getBlurredBackground(img, canvasW, canvasH, bgCache);
+  const bw = canvasW * zoomScale;
+  const bh = canvasH * zoomScale;
+  ctx.drawImage(blurredBg, (canvasW - bw) / 2, (canvasH - bh) / 2, bw, bh);
 
   drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, "contain");
+}
+
+function getBlurredBackground(img, canvasW, canvasH, cache) {
+  if (cache.img === img) return cache.canvas;
+
+  const off = document.createElement("canvas");
+  off.width = canvasW;
+  off.height = canvasH;
+  const offCtx = off.getContext("2d");
+  offCtx.filter = "blur(40px) brightness(0.6)";
+
+  // Slightly overscale so the blur's edge falloff never reveals a gap,
+  // and so it still covers the frame at the largest Ken Burns zoom level.
+  const scale = Math.max(canvasW / img.width, canvasH / img.height) * (1 + KEN_BURNS_ZOOM_RANGE);
+  const w = img.width * scale;
+  const h = img.height * scale;
+  offCtx.drawImage(img, (canvasW - w) / 2, (canvasH - h) / 2, w, h);
+
+  cache.img = img;
+  cache.canvas = off;
+  return off;
 }
 
 function drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, mode) {
@@ -529,12 +554,18 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
   ctx.translate(x, y);
   ctx.scale(scale, scale);
 
+  ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 6;
+
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
-  ctx.lineWidth = fontSize * 0.16;
+  ctx.lineWidth = fontSize * 0.16 + 1;
   ctx.strokeStyle = "#000000";
   ctx.strokeText(word, 0, 0);
 
+  ctx.shadowColor = "transparent";
   ctx.fillStyle = "#ffffff";
   ctx.fillText(word, 0, 0);
 
