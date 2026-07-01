@@ -5,6 +5,14 @@ const promptInput = document.getElementById("prompt");
 const resultSection = document.getElementById("result");
 const scriptOutput = document.getElementById("script-output");
 const status = document.getElementById("status");
+const clearBtn = document.getElementById("clear-btn");
+
+clearBtn.addEventListener("click", () => {
+  promptInput.value = "";
+  resultSection.hidden = true;
+  status.textContent = "";
+  promptInput.focus();
+});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -12,7 +20,7 @@ form.addEventListener("submit", async (e) => {
   const prompt = promptInput.value.trim();
   if (!prompt) return;
 
-  const button = form.querySelector("button");
+  const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   status.textContent = "Génération en cours...";
   resultSection.hidden = true;

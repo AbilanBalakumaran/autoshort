@@ -3,17 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AnimaShorts AI</title>
+<title>autoshort</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <h1>🎌 AnimaShorts AI</h1>
+    <h1>🎌 autoshort</h1>
     <p>Colle une actu anime/manga → reçois un prompt vidéo prêt à l'emploi.</p>
 
     <form id="prompt-form">
       <textarea id="prompt" placeholder="Colle ici le texte de l'actu (ex: annonce, réaction, news manga...)" required></textarea>
-      <button type="submit">Générer le prompt</button>
+      <div class="button-row">
+        <button type="submit">Générer le prompt</button>
+        <button type="button" id="clear-btn">Vider</button>
+      </div>
     </form>
 
     <section id="result" hidden>
