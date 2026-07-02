@@ -17,7 +17,7 @@
 
 :root {
   --header-h: 50px;
-  --nav-h: 50px;
+  --nav-h: 40px;
 }
 
 html {
@@ -124,7 +124,7 @@ main.wide {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 18px;
+  padding: 4px 16px;
   background: transparent;
   color: #888;
   border-radius: 8px;

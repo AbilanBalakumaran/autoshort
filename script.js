@@ -19,6 +19,7 @@ const ICONS = {
   download:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>',
   grip:
     '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
   chevronRight:
@@ -341,7 +342,7 @@ function addVoiceCard(voice) {
   previewBtn.innerHTML = ICONS.play;
   previewBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    playVoicePreview(voice.voice_id, previewBtn);
+    toggleVoicePreview(voice.voice_id, previewBtn);
   });
 
   card.appendChild(info);
@@ -371,22 +372,60 @@ function base64ToBlob(base64, mimeType) {
   return new Blob([bytes], { type: mimeType });
 }
 
-async function playVoicePreview(voiceId, btn) {
+let currentPreviewBtn = null;
+const voicePreviewCache = new Map(); // voiceId -> object URL, avoids re-fetching (and re-spending quota) on repeat plays
+
+voicePreview.addEventListener("ended", () => {
+  if (currentPreviewBtn) currentPreviewBtn.innerHTML = ICONS.play;
+  currentPreviewBtn = null;
+});
+
+async function toggleVoicePreview(voiceId, btn) {
+  const cacheKey = voiceId || "default";
+
+  // Same button clicked again while its preview is the active one — just
+  // toggle play/pause instead of restarting or re-fetching.
+  if (currentPreviewBtn === btn) {
+    if (voicePreview.paused) {
+      await voicePreview.play();
+      btn.innerHTML = ICONS.pause;
+    } else {
+      voicePreview.pause();
+      btn.innerHTML = ICONS.play;
+    }
+    return;
+  }
+
+  // Switching to a different voice — only one preview plays at a time.
+  if (currentPreviewBtn) {
+    voicePreview.pause();
+    currentPreviewBtn.innerHTML = ICONS.play;
+  }
+  currentPreviewBtn = btn;
+
   btn.disabled = true;
   try {
-    const res = await fetch(`${WORKER_URL}/generate-audio`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: PREVIEW_TEXT, voiceId: voiceId || undefined }),
-    });
-    if (!res.ok) throw new Error("preview failed");
-    const data = await res.json();
-    const blob = base64ToBlob(data.audioBase64, data.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
-    voicePreview.src = URL.createObjectURL(blob);
+    let url = voicePreviewCache.get(cacheKey);
+    if (!url) {
+      const res = await fetch(`${WORKER_URL}/generate-audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: PREVIEW_TEXT, voiceId: voiceId || undefined }),
+      });
+      if (!res.ok) throw new Error("preview failed");
+      const data = await res.json();
+      const blob = base64ToBlob(data.audioBase64, data.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
+      url = URL.createObjectURL(blob);
+      voicePreviewCache.set(cacheKey, url);
+    }
+    voicePreview.src = url;
     voicePreview.hidden = false;
     await voicePreview.play();
+    btn.innerHTML = ICONS.pause;
   } catch {
     speakWithBrowser(PREVIEW_TEXT);
+    btn.innerHTML = ICONS.play;
+    currentPreviewBtn = null;
   } finally {
     btn.disabled = false;
   }
@@ -948,9 +987,12 @@ function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
     const audioCtx = new AudioContext();
     const source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
+    // Only routed to `dest` (captured into the recording), not to
+    // audioCtx.destination — that second connection isn't needed for the
+    // recording itself and was making the narration audibly play out loud
+    // during generation, which felt like a video starting on its own.
     const dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
-    source.connect(audioCtx.destination);
 
     const videoStream = montageCanvas.captureStream(30);
     const combinedStream = new MediaStream([
