@@ -198,6 +198,15 @@ label {
   font-size: 0.9rem;
 }
 
+#notifications-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #6c5ce7, #ff5c8a);
+}
+
+#notifications-status {
+  margin-top: 8px;
+}
+
 #generate-audio-btn {
   margin-top: 12px;
   width: 100%;

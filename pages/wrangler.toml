@@ -4,3 +4,7 @@ pages_build_output_dir = "public"
 
 [ai]
 binding = "AI"
+
+[[kv_namespaces]]
+binding = "PUSH_KV"
+id = "ac78dfbc7f4448beb853f99a1642cdcb"

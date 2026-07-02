@@ -103,6 +103,10 @@ function log(msg) {
 window.addEventListener("error", (e) => log(`Erreur JS globale : ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => log(`Promesse rejetée : ${e.reason?.message || e.reason}`));
 
+const notificationsBtn = document.getElementById("notifications-btn");
+const notificationsStatus = document.getElementById("notifications-status");
+const VAPID_PUBLIC_KEY = "BG3prAIiESQXs6H2h7Frwj2fkTzYXbjVkRbKBib0-rfmiFyWxNvAGAbiw-tUuNK1sTE1Vu_LTOGQxOTyp-hD6Wg";
+
 const templateInput = document.getElementById("template-input");
 const durationInput = document.getElementById("duration-input");
 const voiceList = document.getElementById("voice-list");
@@ -130,6 +134,7 @@ initSuggestions();
 initHistory();
 initLogo();
 initServiceWorker();
+initNotifications();
 
 function initLogo() {
   document.getElementById("app-logo").addEventListener("click", () => {
@@ -142,6 +147,79 @@ function initServiceWorker() {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").catch((err) => log(`Service worker non enregistré : ${err.message}`));
   });
+}
+
+function urlBase64ToUint8Array(base64) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64Safe = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64Safe);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function initNotifications() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    notificationsBtn.hidden = true;
+    notificationsStatus.textContent = "Les notifications ne sont pas supportées sur ce navigateur.";
+    return;
+  }
+
+  notificationsBtn.addEventListener("click", async () => {
+    notificationsBtn.disabled = true;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+
+      if (existing) {
+        await fetch(`${WORKER_URL}/unsubscribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: existing.endpoint }),
+        });
+        await existing.unsubscribe();
+        updateNotificationsUi(false);
+        notificationsStatus.textContent = "Notifications désactivées.";
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        notificationsStatus.textContent = "Permission refusée — active les notifications dans les réglages du navigateur pour continuer.";
+        return;
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+
+      await fetch(`${WORKER_URL}/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription }),
+      });
+
+      updateNotificationsUi(true);
+      notificationsStatus.textContent = "Notifications activées !";
+    } catch (err) {
+      notificationsStatus.textContent = `Erreur notifications : ${err.message}`;
+    } finally {
+      notificationsBtn.disabled = false;
+    }
+  });
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    updateNotificationsUi(!!existing);
+  } catch {
+    updateNotificationsUi(false);
+  }
+}
+
+function updateNotificationsUi(subscribed) {
+  notificationsBtn.innerHTML = subscribed
+    ? iconLabel("trashSmall", "Désactiver les notifications")
+    : iconLabel("speaker", "Activer les notifications");
 }
 
 function initButtons() {

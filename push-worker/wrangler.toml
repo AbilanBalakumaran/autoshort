@@ -1,0 +1,16 @@
+name = "autoshort-push-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["0 * * * *"]
+
+[[kv_namespaces]]
+binding = "PUSH_KV"
+id = "ac78dfbc7f4448beb853f99a1642cdcb"
+
+# Secrets (set via `wrangler secret put <NAME>`, never committed here):
+# - VAPID_PUBLIC_KEY
+# - VAPID_PRIVATE_KEY
+# - VAPID_SUBJECT (e.g. "mailto:you@example.com")
