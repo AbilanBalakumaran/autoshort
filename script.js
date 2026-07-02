@@ -232,7 +232,7 @@ async function playVoicePreview(voiceId, btn) {
     });
     if (!res.ok) throw new Error("preview failed");
     const data = await res.json();
-    const blob = base64ToBlob(data.audioBase64, "audio/mpeg");
+    const blob = base64ToBlob(data.audioBase64, data.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
     voicePreview.src = URL.createObjectURL(blob);
     voicePreview.hidden = false;
     await voicePreview.play();
@@ -369,7 +369,11 @@ generateAudioBtn.addEventListener("click", async () => {
       throw new Error(audioData.details || audioData.error || `ElevenLabs indisponible (HTTP ${audioRes.status})`);
     }
 
-    const audioBlob = base64ToBlob(audioData.audioBase64, "audio/mpeg");
+    // ElevenLabs now returns WAV (see generate-audio.js) so decodeAudioData
+    // later on doesn't run into MP3 encoder-delay drift; the Workers AI
+    // fallback still encodes MP3, which is fine since it has no real
+    // per-word timings to keep in sync anyway.
+    const audioBlob = base64ToBlob(audioData.audioBase64, audioData.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
     audioPlayer.src = URL.createObjectURL(audioBlob);
     audioWrapper.hidden = false;
     currentWordTimings = audioData.wordTimings || null;

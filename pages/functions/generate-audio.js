@@ -11,8 +11,14 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Missing 'text'" }, 400);
   }
 
+  // WAV instead of MP3: MP3's encoder delay (a few tens of ms of priming
+  // silence baked in by the encoder) isn't reliably stripped by
+  // decodeAudioData() in every browser, which shifts real playback start
+  // later than ElevenLabs' alignment timestamps assume — the actual
+  // remaining source of subtitle drift even with correct per-word timings.
+  // WAV is uncompressed PCM with a plain header, so it decodes sample-exact.
   const elevenRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}/with-timestamps`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}/with-timestamps?output_format=wav_24000`,
     {
       method: "POST",
       headers: {
