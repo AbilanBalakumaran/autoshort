@@ -55,7 +55,7 @@ self.addEventListener("push", (event) => {
     badge: "./icons/icon-192.png",
     data: { url: data.url || "./" },
   };
-  event.waitUntil(self.registration.showNotification(data.title || "autoshort", options));
+  event.waitUntil(self.registration.showNotification(data.title || "Sukishort", options));
 });
 
 self.addEventListener("notificationclick", (event) => {

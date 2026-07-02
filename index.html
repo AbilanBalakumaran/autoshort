@@ -3,31 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>autoshort</title>
+<title>Sukishort</title>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="favicon-16.png" sizes="16x16" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="theme-color" content="#6c5ce7">
+<meta name="theme-color" content="#0a0a0a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="autoshort">
+<meta name="apple-mobile-web-app-title" content="Sukishort">
 </head>
 <body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <button type="button" id="app-logo" class="app-logo" aria-label="Accueil">
+        <img src="icon.svg" alt="" />
+      </button>
+      <span class="app-title">SUKISHORT</span>
+    </div>
+  </header>
+
   <main>
-    <button type="button" id="app-logo" class="app-logo" aria-label="Accueil">
-      <img src="icon.svg" alt="" />
-    </button>
-
-    <nav class="tabs">
-      <button type="button" class="tab-btn active" data-tab="generate">Accueil</button>
-      <button type="button" class="tab-btn" data-tab="suggestions">Suggestions</button>
-      <button type="button" class="tab-btn" data-tab="history">Historique</button>
-      <button type="button" class="tab-btn" data-tab="settings">Settings</button>
-    </nav>
-
     <section id="tab-generate" class="tab-panel">
       <p>Colle une actu anime/manga → reçois un prompt vidéo prêt à l'emploi.</p>
 
@@ -78,7 +76,7 @@
 
         <div id="montage-result" hidden>
           <video id="montage-preview" controls playsinline></video>
-          <a id="montage-download" class="download-link icon-btn" download="autoshort.mp4"></a>
+          <a id="montage-download" class="download-link icon-btn" download="sukishort.mp4"></a>
         </div>
 
         <section id="metadata-step" hidden>
@@ -170,6 +168,27 @@
       <p id="settings-status"></p>
     </section>
   </main>
+
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <button type="button" class="tab-btn active" data-tab="generate">
+        <span class="icon"></span>
+        <span class="tab-label">Accueil</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="suggestions">
+        <span class="icon"></span>
+        <span class="tab-label">Suggestions</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="history">
+        <span class="icon"></span>
+        <span class="tab-label">Historique</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="settings">
+        <span class="icon"></span>
+        <span class="tab-label">Settings</span>
+      </button>
+    </div>
+  </nav>
 
   <script src="script.js"></script>
 </body>

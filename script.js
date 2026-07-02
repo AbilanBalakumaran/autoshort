@@ -35,6 +35,14 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
   trashSmall:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  home:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 12 2l9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M9 22V12h6v10"/></svg>',
+  compass:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>',
+  clock:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  gear:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
 
 function iconLabel(iconName, label) {
@@ -115,7 +123,7 @@ const saveTemplateBtn = document.getElementById("save-template-btn");
 const resetTemplateBtn = document.getElementById("reset-template-btn");
 const settingsStatus = document.getElementById("settings-status");
 
-const PREVIEW_TEXT = "Hey! This is a quick preview of this narrator voice for autoshort.";
+const PREVIEW_TEXT = "Hey! This is a quick preview of this narrator voice for Sukishort.";
 let selectedVoiceId = "";
 
 let currentVoiceScript = "";
@@ -235,7 +243,15 @@ function initButtons() {
   historyCopyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
   historyCopyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
   refreshSuggestionsBtn.innerHTML = iconLabel("refresh", "Actualiser les actus");
+  setNavIcon("generate", "home");
+  setNavIcon("suggestions", "compass");
+  setNavIcon("history", "clock");
+  setNavIcon("settings", "gear");
   updateConfirmLabel();
+}
+
+function setNavIcon(tab, iconName) {
+  document.querySelector(`.bottom-nav .tab-btn[data-tab="${tab}"] .icon`).innerHTML = ICONS[iconName];
 }
 
 function updateConfirmLabel() {
@@ -820,7 +836,7 @@ async function generateMontage() {
 
     montagePreview.src = URL.createObjectURL(recording.blob);
     montageDownload.href = URL.createObjectURL(recording.blob);
-    montageDownload.download = recording.isMp4 ? "autoshort.mp4" : "autoshort.webm";
+    montageDownload.download = recording.isMp4 ? "sukishort.mp4" : "sukishort.webm";
     montageResult.hidden = false;
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
@@ -1269,7 +1285,7 @@ async function renderHistory() {
       downloadBtn.innerHTML = ICONS.download;
       downloadBtn.title = "Télécharger";
       downloadBtn.href = URL.createObjectURL(item.videoBlob);
-      downloadBtn.download = `autoshort.${item.videoExt}`;
+      downloadBtn.download = `sukishort.${item.videoExt}`;
       downloadBtn.addEventListener("click", (e) => e.stopPropagation());
 
       const removeBtn = document.createElement("button");

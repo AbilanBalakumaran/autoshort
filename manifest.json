@@ -1,13 +1,13 @@
 {
-  "name": "autoshort",
-  "short_name": "autoshort",
+  "name": "Sukishort",
+  "short_name": "Sukishort",
   "description": "Génère des vidéos YouTube Shorts à partir d'actus anime/manga",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f0f1a",
-  "theme_color": "#6c5ce7",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
