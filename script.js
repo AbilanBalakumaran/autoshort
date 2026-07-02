@@ -152,8 +152,27 @@ function initLogo() {
 
 function initServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch((err) => log(`Service worker non enregistré : ${err.message}`));
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("sw.js");
+      // Browsers can keep serving a cached copy of sw.js for up to 24h, so
+      // an update wouldn't be picked up until then otherwise. Forcing a
+      // check on every launch means a new version is detected right away.
+      registration.update();
+
+      // sw.js already calls skipWaiting()/clients.claim(), so as soon as a
+      // new worker takes over, reload once to actually load the new files —
+      // otherwise the page keeps running the old JS/CSS until the user
+      // manually refreshes or relaunches.
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (reloaded) return;
+        reloaded = true;
+        location.reload();
+      });
+    } catch (err) {
+      log(`Service worker non enregistré : ${err.message}`);
+    }
   });
 }
 
