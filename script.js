@@ -813,7 +813,17 @@ function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
     const isMp4 = mimeType?.startsWith("video/mp4");
     log(`Format d'enregistrement choisi : ${mimeType || "défaut du navigateur"}`);
 
-    const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
+    // Left unset, MediaRecorder picks an unbounded/variable bitrate, which is
+    // the classic cause of a file that freezes on strict mobile players
+    // (Instagram/TikTok/WhatsApp) until re-encoded by YouTube. Pinning a
+    // moderate, fixed bitrate matching typical YouTube Shorts output avoids
+    // that without needing a real transcoder.
+    const recorderOptions = {
+      ...(mimeType ? { mimeType } : {}),
+      videoBitsPerSecond: 4_000_000,
+      audioBitsPerSecond: 128_000,
+    };
+    const recorder = new MediaRecorder(combinedStream, recorderOptions);
     const chunks = [];
     recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
     recorder.onstop = () =>
