@@ -120,11 +120,11 @@ main.wide {
    the cascade (equal specificity, later source order). */
 @media (display-mode: standalone) {
   .app-header {
-    padding-top: max(env(safe-area-inset-top, 0px), 44px);
+    padding-top: max(env(safe-area-inset-top, 0px), 20px);
   }
 
   .bottom-nav {
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
   }
 }
 
