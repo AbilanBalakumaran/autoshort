@@ -16,8 +16,8 @@
 }
 
 :root {
-  --header-h: 44px;
-  --nav-h: 40px;
+  --header-h: 40px;
+  --nav-h: 36px;
 }
 
 html {
@@ -122,12 +122,12 @@ main.wide {
    the cascade (equal specificity, later source order). */
 @media (display-mode: standalone) {
   .app-header {
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: max(env(safe-area-inset-top, 0px), 10px);
   }
 
   .bottom-nav {
-    padding-bottom: 0px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* On ignore la safe area excessive et on force 10px pour coller au bas */
+    padding-bottom: 10px;
   }
 }
 
