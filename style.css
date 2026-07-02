@@ -22,6 +22,7 @@
 
 html {
   height: 100%;
+  height: 100dvh;
 }
 
 /* A column flex layout with only `main` scrolling internally, instead of
@@ -39,6 +40,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  height: 100dvh;
 }
 
 main {
