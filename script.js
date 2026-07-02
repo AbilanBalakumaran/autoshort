@@ -899,21 +899,44 @@ function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn, bgCache
   drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, "contain");
 }
 
+// ctx.filter = "blur(...)" isn't reliably applied on every browser/mobile
+// device (some silently ignore it, leaving the background sharp instead of
+// blurred). Downsampling the image to a tiny canvas then scaling it back up
+// produces the blur via plain image interpolation, which every canvas
+// implementation supports the same way.
+const BLUR_DOWNSCALE = 24;
+
 function getBlurredBackground(img, canvasW, canvasH, cache) {
   if (cache.img === img) return cache.canvas;
-
-  const off = document.createElement("canvas");
-  off.width = canvasW;
-  off.height = canvasH;
-  const offCtx = off.getContext("2d");
-  offCtx.filter = "blur(40px) brightness(0.6)";
 
   // Slightly overscale so the blur's edge falloff never reveals a gap,
   // and so it still covers the frame at the largest Ken Burns zoom level.
   const scale = Math.max(canvasW / img.width, canvasH / img.height) * (1 + KEN_BURNS_ZOOM_RANGE);
   const w = img.width * scale;
   const h = img.height * scale;
-  offCtx.drawImage(img, (canvasW - w) / 2, (canvasH - h) / 2, w, h);
+
+  const tinyW = Math.max(1, Math.round(canvasW / BLUR_DOWNSCALE));
+  const tinyH = Math.max(1, Math.round(canvasH / BLUR_DOWNSCALE));
+  const tiny = document.createElement("canvas");
+  tiny.width = tinyW;
+  tiny.height = tinyH;
+  tiny
+    .getContext("2d")
+    .drawImage(img, (tinyW - w / BLUR_DOWNSCALE) / 2, (tinyH - h / BLUR_DOWNSCALE) / 2, w / BLUR_DOWNSCALE, h / BLUR_DOWNSCALE);
+
+  const off = document.createElement("canvas");
+  off.width = canvasW;
+  off.height = canvasH;
+  const offCtx = off.getContext("2d");
+  offCtx.imageSmoothingEnabled = true;
+  offCtx.imageSmoothingQuality = "high";
+  offCtx.drawImage(tiny, 0, 0, canvasW, canvasH);
+
+  // Darken so the sharp foreground image pops — a plain overlay works
+  // everywhere, unlike ctx.filter's brightness() which has the same
+  // cross-browser gaps as blur().
+  offCtx.fillStyle = "rgba(0, 0, 0, 0.4)";
+  offCtx.fillRect(0, 0, canvasW, canvasH);
 
   cache.img = img;
   cache.canvas = off;
