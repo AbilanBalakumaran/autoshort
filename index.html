@@ -5,10 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>autoshort</title>
 <link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#6c5ce7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="autoshort">
 </head>
 <body>
   <main>
-    <h1>🎌 autoshort</h1>
+    <button type="button" id="app-logo" class="app-logo" aria-label="Accueil">
+      <img src="icon.svg" alt="" />
+    </button>
 
     <nav class="tabs">
       <button type="button" class="tab-btn active" data-tab="generate">Accueil</button>
@@ -93,6 +104,7 @@
 
     <section id="tab-suggestions" class="tab-panel" hidden>
       <p>Dernières actus anime/manga — clique un article pour le lire, puis génère un short en un clic.</p>
+      <button type="button" id="refresh-suggestions-btn" class="icon-btn"></button>
       <p id="suggestions-status" class="hint"></p>
       <div id="suggestions-list"></div>
 

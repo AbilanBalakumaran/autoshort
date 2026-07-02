@@ -73,6 +73,7 @@ const debugLog = document.getElementById("debug-log");
 
 const suggestionsStatus = document.getElementById("suggestions-status");
 const suggestionsList = document.getElementById("suggestions-list");
+const refreshSuggestionsBtn = document.getElementById("refresh-suggestions-btn");
 const articleDetail = document.getElementById("article-detail");
 const articleBackBtn = document.getElementById("article-back-btn");
 const articleTitleEl = document.getElementById("article-title");
@@ -127,6 +128,21 @@ initTabs();
 initSettings();
 initSuggestions();
 initHistory();
+initLogo();
+initServiceWorker();
+
+function initLogo() {
+  document.getElementById("app-logo").addEventListener("click", () => {
+    document.querySelector('.tab-btn[data-tab="generate"]').click();
+  });
+}
+
+function initServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => log(`Service worker non enregistré : ${err.message}`));
+  });
+}
 
 function initButtons() {
   generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio et continuer");
@@ -140,6 +156,7 @@ function initButtons() {
   historyBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
   historyCopyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
   historyCopyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
+  refreshSuggestionsBtn.innerHTML = iconLabel("refresh", "Actualiser les actus");
   updateConfirmLabel();
 }
 
@@ -1213,6 +1230,11 @@ function initSuggestions() {
     document.querySelector('.tab-btn[data-tab="generate"]').click();
     promptInput.value = `${currentArticle.title}\n\n${currentArticle.description}`;
     form.requestSubmit();
+  });
+  refreshSuggestionsBtn.addEventListener("click", async () => {
+    refreshSuggestionsBtn.disabled = true;
+    await refreshSuggestions();
+    refreshSuggestionsBtn.disabled = false;
   });
 }
 
