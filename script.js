@@ -1300,7 +1300,7 @@ async function renderHistory() {
       controls.className = "history-controls";
 
       const downloadBtn = document.createElement("a");
-      downloadBtn.className = "timeline-action-btn history-download-btn";
+      downloadBtn.className = "timeline-action-btn";
       downloadBtn.innerHTML = ICONS.download;
       downloadBtn.title = "Télécharger";
       downloadBtn.href = URL.createObjectURL(item.videoBlob);
