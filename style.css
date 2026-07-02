@@ -20,22 +20,37 @@
   --nav-h: 68px;
 }
 
+html {
+  height: 100%;
+}
+
+/* A column flex layout with only `main` scrolling internally, instead of
+   `position: fixed` header/nav over a scrolling body — the latter visibly
+   shifts on iOS Safari because the fixed elements are anchored to the
+   layout viewport, and the address bar's dynamic show/hide (which depends
+   on whether the page content is tall enough to scroll) changes how that
+   lines up with what's actually visible, making the bars appear to jump
+   between tabs with short vs. long content. */
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
   background: #0a0a0a;
   color: #f0f0f5;
   display: flex;
-  justify-content: center;
-  padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 16px);
-  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
-  padding-left: 16px;
-  padding-right: 16px;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
 }
 
 main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   width: 100%;
   max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
   transition: max-width 0.2s ease;
 }
 
@@ -44,20 +59,15 @@ main.wide {
 }
 
 .app-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  flex: none;
   padding-top: env(safe-area-inset-top, 0px);
   background: #0a0a0a;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  z-index: 100;
 }
 
 .app-header-inner {
   max-width: 480px;
-  height: 100%;
+  height: var(--header-h);
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -93,20 +103,15 @@ main.wide {
 }
 
 .bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  flex: none;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: #0a0a0a;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  z-index: 100;
 }
 
 .bottom-nav-inner {
   max-width: 480px;
-  height: 100%;
+  height: var(--nav-h);
   margin: 0 auto;
   display: flex;
 }
@@ -865,7 +870,7 @@ button:disabled {
 }
 
 @media (max-width: 480px) {
-  body {
+  main {
     padding-left: 12px;
     padding-right: 12px;
   }
