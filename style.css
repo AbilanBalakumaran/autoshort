@@ -829,6 +829,11 @@ button:disabled {
   height: 38px;
 }
 
+.history-download-btn {
+  background: #ffffff;
+  color: #E63946;
+}
+
 #history-detail {
   margin-top: 8px;
 }
