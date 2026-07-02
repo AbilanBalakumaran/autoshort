@@ -8,6 +8,13 @@
   box-sizing: border-box;
 }
 
+/* Author rules like `.icon-btn { display: flex }` otherwise silently beat the
+   browser's built-in `[hidden] { display: none }` rule, so anything with a
+   class-based display value would stay visible even with hidden=true. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
