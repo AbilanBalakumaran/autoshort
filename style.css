@@ -16,8 +16,8 @@
 }
 
 :root {
-  --header-h: 60px;
-  --nav-h: 44px;
+  --header-h: 44px;
+  --nav-h: 40px;
 }
 
 html {
@@ -120,11 +120,11 @@ main.wide {
    the cascade (equal specificity, later source order). */
 @media (display-mode: standalone) {
   .app-header {
-    padding-top: max(env(safe-area-inset-top, 0px), 20px);
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .bottom-nav {
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 
