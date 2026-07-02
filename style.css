@@ -129,6 +129,24 @@ main.wide {
   .bottom-nav {
     /* On ignore la safe area excessive et on force 10px pour coller au bas */
     padding-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .bottom-nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: var(--nav-h);
+  }
+
+  .tab-btn {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
 }
 
