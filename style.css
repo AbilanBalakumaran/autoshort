@@ -483,6 +483,10 @@ label {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #E63946, #C1121F);
+  border-radius: 8px;
+  color: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .timeline-action-btn svg {
