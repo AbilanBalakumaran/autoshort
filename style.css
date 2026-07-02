@@ -17,7 +17,7 @@
 
 :root {
   --header-h: 60px;
-  --nav-h: 44px;
+  --nav-h: 50px;
 }
 
 html {
@@ -108,53 +108,34 @@ main.wide {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* env(safe-area-inset-*) can report 0 on the very first paint of an
-   installed iOS PWA, only resolving to the real value once a scroll
-   forces WebKit to recalculate — which is why the header/nav sat in the
-   wrong place until scrolling. Flooring it to the standard modern-iPhone
-   inset sizes in standalone mode means there's nothing to "correct": the
-   value is already right from frame one, and if env() does report a real
-   (larger) value later, max() just keeps using it with no visible jump.
-   Scoped to standalone so regular browser tabs (no notch overlap to
-   begin with) aren't affected. Placed after the base rules so it wins
-   the cascade (equal specificity, later source order). */
-@media (display-mode: standalone) {
-  .app-header {
-    padding-top: max(env(safe-area-inset-top, 0px), 44px);
-  }
-
-  .bottom-nav {
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
-  }
-}
-
 .bottom-nav-inner {
   max-width: 480px;
   height: var(--nav-h);
   margin: 0 auto;
+  padding-top: 8px;
   display: flex;
+  justify-content: space-evenly;
+  align-items: center;
 }
 
 .tab-btn {
-  flex: 1;
+  flex: none;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 4px 4px;
+  padding: 8px 18px;
   background: transparent;
   color: #888;
-  border-radius: 0;
+  border-radius: 8px;
 }
 
 .tab-btn .icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 .tab-label {
-  font-size: 0.6rem;
+  display: none;
 }
 
 .tab-btn.active {
