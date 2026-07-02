@@ -58,16 +58,22 @@ export async function onRequestPost({ request, env }) {
 
   // ElevenLabs failed (quota exhausted, key issue, etc.) — fall back to
   // Cloudflare Workers AI's free TTS model so a real, downloadable audio
-  // file is always produced. No word-level timing is available here.
+  // file is always produced.
   try {
     const audioStream = await env.AI.run("@cf/deepgram/aura-1", {
       text,
       speaker: "asteria",
       encoding: "mp3",
     });
-    const audioBase64 = await streamToBase64(audioStream);
+    const audioBuffer = await new Response(audioStream).arrayBuffer();
+    const audioBase64 = bufferToBase64(audioBuffer);
 
-    return json({ audioBase64, wordTimings: null, source: "workers-ai" });
+    // This TTS model doesn't expose word-level timing, so forced-align the
+    // actual generated audio via Whisper (Groq) to still get real per-word
+    // timestamps for perfect subtitle sync on the fallback voice too.
+    const wordTimings = await transcribeWordTimings(audioBuffer, env.GROQ_API_KEY);
+
+    return json({ audioBase64, wordTimings, source: "workers-ai" });
   } catch (fallbackErr) {
     return json(
       {
@@ -110,8 +116,40 @@ function computeWordTimings(alignment) {
   return { words, startTimes };
 }
 
-async function streamToBase64(stream) {
-  const buffer = await new Response(stream).arrayBuffer();
+async function transcribeWordTimings(audioBuffer, apiKey) {
+  try {
+    const form = new FormData();
+    form.append("file", new Blob([audioBuffer], { type: "audio/mpeg" }), "audio.mp3");
+    form.append("model", "whisper-large-v3-turbo");
+    form.append("response_format", "verbose_json");
+    form.append("timestamp_granularities[]", "word");
+
+    const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const words = [];
+    const startTimes = [];
+    for (const w of data.words || []) {
+      const wordText = (w.word || "").trim();
+      if (!wordText) continue;
+      words.push(wordText);
+      startTimes.push(w.start);
+    }
+
+    return words.length > 0 ? { words, startTimes } : null;
+  } catch {
+    // Sync falls back to even spacing if transcription is unavailable —
+    // still better than failing the whole audio generation over it.
+    return null;
+  }
+}
+
+function bufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   const chunkSize = 0x8000;
