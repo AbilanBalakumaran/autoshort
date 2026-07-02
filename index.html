@@ -110,6 +110,29 @@
       <p>Tes générations précédentes, gardées dans ce navigateur (pas besoin de tout stocker sur ton téléphone).</p>
       <p id="history-status" class="hint"></p>
       <div id="history-list" class="history-list"></div>
+
+      <section id="history-detail" hidden>
+        <button type="button" id="history-back-btn" class="icon-btn"></button>
+
+        <video id="history-detail-video" class="history-detail-video" controls playsinline></video>
+
+        <h3>Fiche SEO</h3>
+
+        <label>Titres suggérés</label>
+        <div id="history-detail-titles" class="titles-list"></div>
+
+        <label for="history-detail-description">Description</label>
+        <div class="copy-row">
+          <textarea id="history-detail-description" class="copy-textarea" readonly></textarea>
+          <button type="button" id="history-copy-description-btn" class="icon-btn"></button>
+        </div>
+
+        <label for="history-detail-tags">Tags YouTube</label>
+        <div class="copy-row">
+          <textarea id="history-detail-tags" class="copy-textarea copy-textarea-small" readonly></textarea>
+          <button type="button" id="history-copy-tags-btn" class="icon-btn"></button>
+        </div>
+      </section>
     </section>
 
     <section id="tab-settings" class="tab-panel" hidden>

@@ -83,6 +83,14 @@ const articleGenerateBtn = document.getElementById("article-generate-btn");
 
 const historyStatus = document.getElementById("history-status");
 const historyList = document.getElementById("history-list");
+const historyDetail = document.getElementById("history-detail");
+const historyBackBtn = document.getElementById("history-back-btn");
+const historyDetailVideo = document.getElementById("history-detail-video");
+const historyDetailTitles = document.getElementById("history-detail-titles");
+const historyDetailDescription = document.getElementById("history-detail-description");
+const historyDetailTags = document.getElementById("history-detail-tags");
+const historyCopyDescriptionBtn = document.getElementById("history-copy-description-btn");
+const historyCopyTagsBtn = document.getElementById("history-copy-tags-btn");
 
 function log(msg) {
   debugLog.hidden = false;
@@ -129,6 +137,9 @@ function initButtons() {
   copyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
   articleBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
   articleGenerateBtn.innerHTML = iconLabel("film", "Générer en short");
+  historyBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
+  historyCopyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
+  historyCopyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
   updateConfirmLabel();
 }
 
@@ -727,6 +738,9 @@ async function generateMontage() {
       videoExt: recording.isMp4 ? "mp4" : "webm",
       thumbnail: selectedImages[0] || "",
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
+      titles: metadata?.titles || [],
+      description: metadata?.description || "",
+      tags: metadata?.tags || "",
     });
 
     log("Terminé");
@@ -1038,12 +1052,15 @@ function openHistoryDb() {
   });
 }
 
-async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title }) {
+async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title, titles, description, tags }) {
   try {
     const db = await openHistoryDb();
     const tx = db.transaction(HISTORY_STORE, "readwrite");
     tx.objectStore(HISTORY_STORE).add({
       title,
+      titles: titles || [],
+      description: description || "",
+      tags: tags || "",
       voiceScript,
       videoBlob,
       videoExt,
@@ -1082,11 +1099,49 @@ async function deleteHistoryItem(id) {
 
 function initHistory() {
   document.querySelector('.tab-btn[data-tab="history"]').addEventListener("click", renderHistory);
+  historyBackBtn.addEventListener("click", () => {
+    historyDetail.hidden = true;
+    historyList.hidden = false;
+    historyDetailVideo.pause();
+    historyDetailVideo.removeAttribute("src");
+    historyDetailVideo.load();
+  });
+  historyCopyDescriptionBtn.addEventListener("click", () =>
+    copyToClipboard(historyDetailDescription.value, historyCopyDescriptionBtn, "Copier la description")
+  );
+  historyCopyTagsBtn.addEventListener("click", () =>
+    copyToClipboard(historyDetailTags.value, historyCopyTagsBtn, "Copier les tags")
+  );
+}
+
+function openHistoryDetail(item) {
+  historyList.hidden = true;
+  historyDetail.hidden = false;
+
+  historyDetailVideo.src = URL.createObjectURL(item.videoBlob);
+
+  historyDetailTitles.innerHTML = "";
+  const titles = item.titles && item.titles.length ? item.titles : [item.title || "Sans titre"];
+  titles.forEach((title) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "title-item";
+    btn.textContent = title;
+    btn.addEventListener("click", () => copyToClipboard(title, btn, title));
+    historyDetailTitles.appendChild(btn);
+  });
+
+  historyDetailDescription.value = item.description || "";
+  historyDetailTags.value = item.tags || "";
+
+  historyDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function renderHistory() {
   historyStatus.textContent = "Chargement...";
   historyList.innerHTML = "";
+  historyDetail.hidden = true;
+  historyList.hidden = false;
   try {
     const items = await getAllHistory();
     historyStatus.textContent = items.length === 0 ? "Aucune génération sauvegardée pour l'instant." : "";
@@ -1094,6 +1149,8 @@ async function renderHistory() {
     items.forEach((item) => {
       const card = document.createElement("div");
       card.className = "history-card";
+      card.title = "Voir la fiche et la proposition SEO";
+      card.addEventListener("click", () => openHistoryDetail(item));
 
       const thumb = document.createElement("img");
       thumb.className = "history-thumb";
@@ -1109,24 +1166,8 @@ async function renderHistory() {
       dateEl.textContent = dateStr;
       info.append(titleEl, dateEl);
 
-      const video = document.createElement("video");
-      video.controls = true;
-      video.playsInline = true;
-      video.className = "history-video";
-      video.hidden = true;
-
       const controls = document.createElement("div");
       controls.className = "history-controls";
-
-      const playBtn = document.createElement("button");
-      playBtn.type = "button";
-      playBtn.className = "timeline-action-btn";
-      playBtn.innerHTML = ICONS.play;
-      playBtn.title = "Voir";
-      playBtn.addEventListener("click", () => {
-        if (!video.src) video.src = URL.createObjectURL(item.videoBlob);
-        video.hidden = !video.hidden;
-      });
 
       const downloadBtn = document.createElement("a");
       downloadBtn.className = "timeline-action-btn";
@@ -1134,19 +1175,21 @@ async function renderHistory() {
       downloadBtn.title = "Télécharger";
       downloadBtn.href = URL.createObjectURL(item.videoBlob);
       downloadBtn.download = `autoshort.${item.videoExt}`;
+      downloadBtn.addEventListener("click", (e) => e.stopPropagation());
 
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.className = "timeline-action-btn";
       removeBtn.innerHTML = ICONS.trashSmall;
       removeBtn.title = "Supprimer";
-      removeBtn.addEventListener("click", async () => {
+      removeBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
         await deleteHistoryItem(item.id);
         renderHistory();
       });
 
-      controls.append(playBtn, downloadBtn, removeBtn);
-      card.append(thumb, info, controls, video);
+      controls.append(downloadBtn, removeBtn);
+      card.append(thumb, info, controls);
       historyList.appendChild(card);
     });
   } catch (err) {

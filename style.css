@@ -708,6 +708,12 @@ button:disabled {
   border-radius: 10px;
   background: #1a1a2e;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.history-card:hover {
+  border-color: rgba(108, 92, 231, 0.6);
 }
 
 .history-thumb {
@@ -745,13 +751,29 @@ button:disabled {
   height: 38px;
 }
 
-.history-video {
-  grid-column: 1 / -1;
+#history-detail {
+  margin-top: 8px;
+}
+
+#history-detail h3 {
+  margin: 20px 0 4px;
+}
+
+#history-back-btn {
+  width: auto;
+  padding: 10px 16px;
+  background: #333;
+  margin-bottom: 12px;
+}
+
+.history-detail-video {
   width: 100%;
-  max-width: 240px;
-  margin: 10px auto 0;
-  border-radius: 8px;
+  max-width: 320px;
   display: block;
+  margin: 0 auto;
+  border-radius: 10px;
+  aspect-ratio: 9 / 16;
+  background: #000;
 }
 
 @media (max-width: 480px) {
