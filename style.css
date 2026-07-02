@@ -146,10 +146,12 @@ main.wide {
   align-items: center;
   justify-content: center;
   gap: 1px;
-  padding: 10px 4px 0px 4px;
+  padding: 0px 4px;
   background: transparent;
   color: #888;
   border-radius: 0;
+  border: none;
+  cursor: pointer;
 }
 
 .tab-btn .icon {
