@@ -12,6 +12,8 @@
 
     <nav class="tabs">
       <button type="button" class="tab-btn active" data-tab="generate">Accueil</button>
+      <button type="button" class="tab-btn" data-tab="suggestions">Suggestions</button>
+      <button type="button" class="tab-btn" data-tab="history">Historique</button>
       <button type="button" class="tab-btn" data-tab="settings">Settings</button>
     </nav>
 
@@ -41,10 +43,9 @@
 
       <section id="image-step" hidden>
         <h2>Choisis les images pour le montage</h2>
-        <p class="hint">Sélectionne une ou plusieurs images proposées.</p>
+        <p class="hint">Sélectionne une ou plusieurs images proposées. Clique la tuile "+" pour en ajouter depuis ta galerie.</p>
 
         <input type="file" id="upload-input" accept="image/*" multiple hidden />
-        <button type="button" id="upload-btn" class="icon-btn"></button>
 
         <div id="image-grid" class="image-grid"></div>
         <div class="button-row">
@@ -88,6 +89,27 @@
           </div>
         </section>
       </section>
+    </section>
+
+    <section id="tab-suggestions" class="tab-panel" hidden>
+      <p>Dernières actus anime/manga — clique un article pour le lire, puis génère un short en un clic.</p>
+      <p id="suggestions-status" class="hint"></p>
+      <div id="suggestions-list"></div>
+
+      <section id="article-detail" hidden>
+        <button type="button" id="article-back-btn" class="icon-btn"></button>
+        <h2 id="article-title"></h2>
+        <img id="article-image" hidden />
+        <div id="article-content"></div>
+        <a id="article-source-link" target="_blank" rel="noopener noreferrer"></a>
+        <button type="button" id="article-generate-btn" class="icon-btn"></button>
+      </section>
+    </section>
+
+    <section id="tab-history" class="tab-panel" hidden>
+      <p>Tes générations précédentes, gardées dans ce navigateur (pas besoin de tout stocker sur ton téléphone).</p>
+      <p id="history-status" class="hint"></p>
+      <div id="history-list" class="history-list"></div>
     </section>
 
     <section id="tab-settings" class="tab-panel" hidden>

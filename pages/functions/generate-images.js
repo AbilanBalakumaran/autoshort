@@ -53,10 +53,31 @@ async function fetchRealShowImages(query) {
       .filter(Boolean)
       .filter((url) => url !== mainImage);
 
-    const shuffledGallery = shuffle(galleryUrls);
-    const urls = mainImage ? [mainImage, ...shuffledGallery] : shuffledGallery;
+    let urls = mainImage ? [mainImage, ...shuffle(galleryUrls)] : shuffle(galleryUrls);
+    urls = [...new Set(urls)];
 
-    return [...new Set(urls)].slice(0, MAX_IMAGES);
+    // Lesser-known shows often have very few gallery pictures on MAL. Top up
+    // the pool with real character portraits from the same show so there's
+    // always enough variety for a montage, without falling back to AI images.
+    if (urls.length < MAX_IMAGES) {
+      const characterUrls = await fetchCharacterImages(malId);
+      urls = [...new Set([...urls, ...shuffle(characterUrls)])];
+    }
+
+    return urls.slice(0, MAX_IMAGES);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCharacterImages(malId) {
+  try {
+    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/characters`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || [])
+      .map((c) => c.character?.images?.jpg?.image_url)
+      .filter(Boolean);
   } catch {
     return [];
   }

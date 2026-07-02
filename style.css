@@ -568,6 +568,185 @@ button:disabled {
   font-family: inherit;
 }
 
+.upload-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2e;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  color: #aaa;
+}
+
+.upload-tile:hover {
+  border-color: rgba(108, 92, 231, 0.6);
+  color: #f0f0f5;
+}
+
+.upload-tile .icon {
+  width: 28px;
+  height: 28px;
+}
+
+/* Suggestions tab */
+
+.suggestions-heading {
+  margin: 20px 0 8px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #aaa;
+}
+
+.suggestions-heading:first-child {
+  margin-top: 8px;
+}
+
+.article-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.article-card:hover {
+  border-color: rgba(108, 92, 231, 0.6);
+}
+
+.article-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex: none;
+  background: #000;
+}
+
+.article-card span {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+#article-detail {
+  margin-top: 8px;
+}
+
+#article-back-btn {
+  width: auto;
+  padding: 10px 16px;
+  background: #333;
+  margin-bottom: 12px;
+}
+
+#article-image {
+  width: 100%;
+  border-radius: 10px;
+  margin: 8px 0 12px;
+  display: block;
+}
+
+#article-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #ddd;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+#article-source-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: #d6d2ff;
+  font-size: 0.85rem;
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+
+#article-source-link .icon {
+  width: 16px;
+  height: 16px;
+}
+
+#article-source-link:hover {
+  text-decoration: underline;
+}
+
+#article-generate-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #6c5ce7, #ff5c8a);
+}
+
+/* History tab */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.history-card {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-thumb {
+  width: 56px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-info strong {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.history-info span {
+  font-size: 0.75rem;
+  color: #aaa;
+}
+
+.history-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.history-controls .timeline-action-btn {
+  width: 38px;
+  height: 38px;
+}
+
+.history-video {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 240px;
+  margin: 10px auto 0;
+  border-radius: 8px;
+  display: block;
+}
+
 @media (max-width: 480px) {
   body {
     padding: 24px 12px;

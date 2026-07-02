@@ -12,13 +12,12 @@ export async function onRequestPost({ request, env }) {
   }
 
   const elevenRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}/with-timestamps`,
     {
       method: "POST",
       headers: {
         "xi-api-key": env.ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
-        "Accept": "audio/mpeg",
       },
       body: JSON.stringify({
         text,
@@ -36,28 +35,29 @@ export async function onRequestPost({ request, env }) {
   );
 
   if (elevenRes.ok) {
-    return new Response(elevenRes.body, {
-      status: 200,
-      headers: { "Content-Type": "audio/mpeg", "X-Audio-Source": "elevenlabs", ...corsHeaders() },
-    });
+    const data = await elevenRes.json();
+    // Real per-word start times (from ElevenLabs' character-level alignment)
+    // let the montage sync subtitles to when each word is actually spoken,
+    // instead of assuming every word takes the same amount of time.
+    const wordTimings = computeWordTimings(data.alignment || data.normalized_alignment);
+
+    return json({ audioBase64: data.audio_base64, wordTimings, source: "elevenlabs" });
   }
 
   const elevenErrText = await elevenRes.text();
 
   // ElevenLabs failed (quota exhausted, key issue, etc.) — fall back to
   // Cloudflare Workers AI's free TTS model so a real, downloadable audio
-  // file is always produced.
+  // file is always produced. No word-level timing is available here.
   try {
     const audioStream = await env.AI.run("@cf/deepgram/aura-1", {
       text,
       speaker: "asteria",
       encoding: "mp3",
     });
+    const audioBase64 = await streamToBase64(audioStream);
 
-    return new Response(audioStream, {
-      status: 200,
-      headers: { "Content-Type": "audio/mpeg", "X-Audio-Source": "workers-ai", ...corsHeaders() },
-    });
+    return json({ audioBase64, wordTimings: null, source: "workers-ai" });
   } catch (fallbackErr) {
     return json(
       {
@@ -67,4 +67,41 @@ export async function onRequestPost({ request, env }) {
       502
     );
   }
+}
+
+function computeWordTimings(alignment) {
+  if (!alignment?.characters?.length) return null;
+
+  const { characters, character_start_times_seconds } = alignment;
+  const timings = [];
+  let wordStart = null;
+  let hasWordChars = false;
+
+  for (let i = 0; i < characters.length; i++) {
+    const ch = characters[i];
+    if (/\s/.test(ch)) {
+      if (hasWordChars) {
+        timings.push(wordStart);
+        hasWordChars = false;
+        wordStart = null;
+      }
+    } else {
+      if (wordStart === null) wordStart = character_start_times_seconds[i];
+      hasWordChars = true;
+    }
+  }
+  if (hasWordChars) timings.push(wordStart);
+
+  return timings;
+}
+
+async function streamToBase64(stream) {
+  const buffer = await new Response(stream).arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }

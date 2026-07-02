@@ -27,6 +27,14 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   swap:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+  plus:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  back:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  link:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  trashSmall:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
 };
 
 function iconLabel(iconName, label) {
@@ -46,7 +54,6 @@ const generateAudioBtn = document.getElementById("generate-audio-btn");
 const imageStep = document.getElementById("image-step");
 const imageGrid = document.getElementById("image-grid");
 const uploadInput = document.getElementById("upload-input");
-const uploadBtn = document.getElementById("upload-btn");
 const regenerateImagesBtn = document.getElementById("regenerate-images-btn");
 const confirmImagesBtn = document.getElementById("confirm-images-btn");
 const montageBtn = document.getElementById("montage-btn");
@@ -63,6 +70,19 @@ const tagsOutput = document.getElementById("tags-output");
 const copyDescriptionBtn = document.getElementById("copy-description-btn");
 const copyTagsBtn = document.getElementById("copy-tags-btn");
 const debugLog = document.getElementById("debug-log");
+
+const suggestionsStatus = document.getElementById("suggestions-status");
+const suggestionsList = document.getElementById("suggestions-list");
+const articleDetail = document.getElementById("article-detail");
+const articleBackBtn = document.getElementById("article-back-btn");
+const articleTitleEl = document.getElementById("article-title");
+const articleImageEl = document.getElementById("article-image");
+const articleContentEl = document.getElementById("article-content");
+const articleSourceLink = document.getElementById("article-source-link");
+const articleGenerateBtn = document.getElementById("article-generate-btn");
+
+const historyStatus = document.getElementById("history-status");
+const historyList = document.getElementById("history-list");
 
 function log(msg) {
   debugLog.hidden = false;
@@ -90,21 +110,25 @@ let currentVisualStyle = "";
 let currentShowName = "";
 let currentCharacters = [];
 let currentRealEntities = [];
+let currentWordTimings = null; // real per-word start times (seconds) from ElevenLabs, when available
 let selectedImages = []; // ordered array of image URLs, order = order in the video
 let defaultTemplate = "";
 
 initButtons();
 initTabs();
 initSettings();
+initSuggestions();
+initHistory();
 
 function initButtons() {
   generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio et continuer");
-  uploadBtn.innerHTML = iconLabel("folder", "Ajouter depuis ma galerie");
   regenerateImagesBtn.innerHTML = iconLabel("refresh", "Régénérer");
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
   montageDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
   copyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
   copyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
+  articleBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
+  articleGenerateBtn.innerHTML = iconLabel("film", "Générer en short");
   updateConfirmLabel();
 }
 
@@ -191,6 +215,13 @@ function addVoiceCard(voice) {
   voiceList.appendChild(card);
 }
 
+function base64ToBlob(base64, mimeType) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
 async function playVoicePreview(voiceId, btn) {
   btn.disabled = true;
   try {
@@ -200,7 +231,8 @@ async function playVoicePreview(voiceId, btn) {
       body: JSON.stringify({ text: PREVIEW_TEXT, voiceId: voiceId || undefined }),
     });
     if (!res.ok) throw new Error("preview failed");
-    const blob = await res.blob();
+    const data = await res.json();
+    const blob = base64ToBlob(data.audioBase64, "audio/mpeg");
     voicePreview.src = URL.createObjectURL(blob);
     voicePreview.hidden = false;
     await voicePreview.play();
@@ -247,6 +279,7 @@ clearBtn.addEventListener("click", () => {
   currentShowName = "";
   currentCharacters = [];
   currentRealEntities = [];
+  currentWordTimings = null;
   selectedImages = [];
   imageGrid.innerHTML = "";
   timelineStep.hidden = true;
@@ -275,6 +308,7 @@ form.addEventListener("submit", async (e) => {
   montageResult.hidden = true;
   metadataStep.hidden = true;
   selectedImages = [];
+  currentWordTimings = null;
   imageGrid.innerHTML = "";
   timelineStep.hidden = true;
   timelineList.innerHTML = "";
@@ -329,23 +363,18 @@ generateAudioBtn.addEventListener("click", async () => {
       body: JSON.stringify({ text: currentVoiceScript, voiceId }),
     });
 
+    const audioData = await audioRes.json();
+
     if (!audioRes.ok) {
-      let details = "";
-      try {
-        const errData = await audioRes.json();
-        details = errData.details || errData.error || "";
-      } catch {
-        details = await audioRes.text().catch(() => "");
-      }
-      throw new Error(details || `ElevenLabs indisponible (HTTP ${audioRes.status})`);
+      throw new Error(audioData.details || audioData.error || `ElevenLabs indisponible (HTTP ${audioRes.status})`);
     }
 
-    const audioSource = audioRes.headers.get("X-Audio-Source");
-    const audioBlob = await audioRes.blob();
+    const audioBlob = base64ToBlob(audioData.audioBase64, "audio/mpeg");
     audioPlayer.src = URL.createObjectURL(audioBlob);
     audioWrapper.hidden = false;
+    currentWordTimings = audioData.wordTimings || null;
     status.textContent =
-      audioSource === "workers-ai"
+      audioData.source === "workers-ai"
         ? "ElevenLabs indisponible (quota) — voix de secours Cloudflare utilisée."
         : "";
 
@@ -368,8 +397,6 @@ function goToImageStep() {
 }
 
 regenerateImagesBtn.addEventListener("click", generateImages);
-
-uploadBtn.addEventListener("click", () => uploadInput.click());
 
 uploadInput.addEventListener("change", () => {
   [...uploadInput.files].forEach((file) => {
@@ -444,6 +471,7 @@ async function generateImages() {
     }
 
     imageGrid.innerHTML = "";
+    addUploadTile();
 
     // Keep previously selected images visible so a "Régénérer" click doesn't lose picks.
     selectedImages.forEach((src) => addImageCard(src));
@@ -460,6 +488,15 @@ async function generateImages() {
     regenerateImagesBtn.disabled = false;
     confirmImagesBtn.disabled = false;
   }
+}
+
+function addUploadTile() {
+  const tile = document.createElement("div");
+  tile.className = "image-card upload-tile";
+  tile.innerHTML = `<span class="icon">${ICONS.plus}</span>`;
+  tile.title = "Ajouter depuis ma galerie";
+  tile.addEventListener("click", () => uploadInput.click());
+  imageGrid.appendChild(tile);
 }
 
 function addImageCard(src) {
@@ -668,7 +705,7 @@ async function generateMontage() {
 
     status.textContent = "Enregistrement du montage...";
     log("Enregistrement du montage (canvas + audio)...");
-    const recording = await renderMontage(images, audioBuffer, currentVoiceScript);
+    const recording = await renderMontage(images, audioBuffer, currentVoiceScript, currentWordTimings);
     log(`Vidéo assemblée (${recording.blob.size} octets, ${recording.isMp4 ? "mp4" : "webm"})`);
 
     montagePreview.src = URL.createObjectURL(recording.blob);
@@ -678,7 +715,16 @@ async function generateMontage() {
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
     status.textContent = "Génération de la fiche technique...";
-    await generateMetadata();
+    const metadata = await generateMetadata();
+
+    await saveToHistory({
+      voiceScript: currentVoiceScript,
+      videoBlob: recording.blob,
+      videoExt: recording.isMp4 ? "mp4" : "webm",
+      thumbnail: selectedImages[0] || "",
+      title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
+    });
+
     log("Terminé");
     status.textContent = "";
   } catch (err) {
@@ -717,8 +763,10 @@ async function generateMetadata() {
     descriptionOutput.value = data.description || "";
     tagsOutput.value = data.tags || "";
     metadataStep.hidden = false;
+    return data;
   } catch (err) {
     status.textContent = `Erreur fiche technique : ${err.message}`;
+    return null;
   }
 }
 
@@ -738,7 +786,7 @@ function loadImage(src) {
 // canvas.captureStream() + MediaRecorder, which is proven to work on desktop.
 // Safari (iOS 14.3+/macOS) can record straight to MP4, avoiding the WebM
 // mobile-playback problem entirely for that browser.
-function renderMontage(images, audioBuffer, subtitleText) {
+function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
   return new Promise((resolve, reject) => {
     const ctx = montageCanvas.getContext("2d");
     const audioCtx = new AudioContext();
@@ -775,6 +823,14 @@ function renderMontage(images, audioBuffer, subtitleText) {
     const durationMs = audioBuffer.duration * 1000;
     const perImageMs = durationMs / images.length;
     const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
+    // Only trust the real per-word timings if they line up 1:1 with our word
+    // split — otherwise fall back to even spacing rather than desyncing.
+    const timingsMs =
+      wordTimings && wordTimings.length === subtitleWords.length
+        ? wordTimings.map((s) => s * 1000)
+        : null;
+    log(timingsMs ? "Sous-titres calés sur les vrais timings ElevenLabs" : "Sous-titres à espacement égal (pas de timing réel disponible)");
+
     const startTime = performance.now();
     const bgCache = { img: null, canvas: null };
     let rafId;
@@ -793,7 +849,7 @@ function renderMontage(images, audioBuffer, subtitleText) {
       const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
 
       drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
-      drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs);
+      drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs, timingsMs);
 
       rafId = requestAnimationFrame(draw);
     }
@@ -863,18 +919,32 @@ function drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, mode) {
 
 const SUBTITLE_BOUNCE_MS = 220;
 
-function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs) {
+function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsMs) {
   if (!words || words.length === 0) return;
 
-  const wordDurationMs = totalMs / words.length;
-  const currentIndex = Math.min(words.length - 1, Math.floor(elapsedMs / wordDurationMs));
-  const word = words[currentIndex].toUpperCase();
+  let currentIndex;
+  let wordAppearedAt;
 
-  const wordAppearedAt = currentIndex * wordDurationMs;
+  if (timingsMs) {
+    // Real per-word start times: the current word is the last one whose
+    // start time has already passed.
+    currentIndex = 0;
+    for (let i = 0; i < timingsMs.length; i++) {
+      if (timingsMs[i] <= elapsedMs) currentIndex = i;
+      else break;
+    }
+    wordAppearedAt = timingsMs[currentIndex];
+  } else {
+    const wordDurationMs = totalMs / words.length;
+    currentIndex = Math.min(words.length - 1, Math.floor(elapsedMs / wordDurationMs));
+    wordAppearedAt = currentIndex * wordDurationMs;
+  }
+
+  const word = words[currentIndex].toUpperCase();
   const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
   const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 30; // scaled down to match the 540x960 render canvas
+  const fontSize = 45;
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -908,4 +978,268 @@ function bounceEaseOut(t) {
   const c1 = 1.70158 * 1.5;
   const c3 = c1 + 1;
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+// ---------- Historique (IndexedDB) ----------
+
+const HISTORY_DB_NAME = "autoshort-history";
+const HISTORY_STORE = "generations";
+
+function openHistoryDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HISTORY_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+        db.createObjectStore(HISTORY_STORE, { keyPath: "id", autoIncrement: true });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title }) {
+  try {
+    const db = await openHistoryDb();
+    const tx = db.transaction(HISTORY_STORE, "readwrite");
+    tx.objectStore(HISTORY_STORE).add({
+      title,
+      voiceScript,
+      videoBlob,
+      videoExt,
+      thumbnail,
+      date: Date.now(),
+    });
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    if (!document.getElementById("tab-history").hidden) renderHistory();
+  } catch (err) {
+    log(`Historique non sauvegardé : ${err.message || err}`);
+  }
+}
+
+async function getAllHistory() {
+  const db = await openHistoryDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HISTORY_STORE, "readonly");
+    const req = tx.objectStore(HISTORY_STORE).getAll();
+    req.onsuccess = () => resolve(req.result.reverse());
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function deleteHistoryItem(id) {
+  const db = await openHistoryDb();
+  const tx = db.transaction(HISTORY_STORE, "readwrite");
+  tx.objectStore(HISTORY_STORE).delete(id);
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function initHistory() {
+  document.querySelector('.tab-btn[data-tab="history"]').addEventListener("click", renderHistory);
+}
+
+async function renderHistory() {
+  historyStatus.textContent = "Chargement...";
+  historyList.innerHTML = "";
+  try {
+    const items = await getAllHistory();
+    historyStatus.textContent = items.length === 0 ? "Aucune génération sauvegardée pour l'instant." : "";
+
+    items.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "history-card";
+
+      const thumb = document.createElement("img");
+      thumb.className = "history-thumb";
+      thumb.src = item.thumbnail || "";
+      thumb.alt = "";
+
+      const info = document.createElement("div");
+      info.className = "history-info";
+      const dateStr = new Date(item.date).toLocaleString();
+      const titleEl = document.createElement("strong");
+      titleEl.textContent = item.title || "Sans titre";
+      const dateEl = document.createElement("span");
+      dateEl.textContent = dateStr;
+      info.append(titleEl, dateEl);
+
+      const video = document.createElement("video");
+      video.controls = true;
+      video.playsInline = true;
+      video.className = "history-video";
+      video.hidden = true;
+
+      const controls = document.createElement("div");
+      controls.className = "history-controls";
+
+      const playBtn = document.createElement("button");
+      playBtn.type = "button";
+      playBtn.className = "timeline-action-btn";
+      playBtn.innerHTML = ICONS.play;
+      playBtn.title = "Voir";
+      playBtn.addEventListener("click", () => {
+        if (!video.src) video.src = URL.createObjectURL(item.videoBlob);
+        video.hidden = !video.hidden;
+      });
+
+      const downloadBtn = document.createElement("a");
+      downloadBtn.className = "timeline-action-btn";
+      downloadBtn.innerHTML = ICONS.download;
+      downloadBtn.title = "Télécharger";
+      downloadBtn.href = URL.createObjectURL(item.videoBlob);
+      downloadBtn.download = `autoshort.${item.videoExt}`;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "timeline-action-btn";
+      removeBtn.innerHTML = ICONS.trashSmall;
+      removeBtn.title = "Supprimer";
+      removeBtn.addEventListener("click", async () => {
+        await deleteHistoryItem(item.id);
+        renderHistory();
+      });
+
+      controls.append(playBtn, downloadBtn, removeBtn);
+      card.append(thumb, info, controls, video);
+      historyList.appendChild(card);
+    });
+  } catch (err) {
+    historyStatus.textContent = `Erreur historique : ${err.message}`;
+  }
+}
+
+// ---------- Suggestions (actus) ----------
+
+let currentArticle = null;
+let suggestionsLoaded = false;
+
+function initSuggestions() {
+  document.querySelector('.tab-btn[data-tab="suggestions"]').addEventListener("click", loadSuggestions);
+  articleBackBtn.addEventListener("click", () => {
+    articleDetail.hidden = true;
+    suggestionsList.hidden = false;
+  });
+  articleGenerateBtn.addEventListener("click", () => {
+    if (!currentArticle) return;
+    document.querySelector('.tab-btn[data-tab="generate"]').click();
+    promptInput.value = `${currentArticle.title}\n\n${currentArticle.description}`;
+    form.requestSubmit();
+  });
+}
+
+function loadSuggestions() {
+  if (suggestionsLoaded) return;
+  suggestionsLoaded = true;
+  refreshSuggestions();
+}
+
+async function refreshSuggestions() {
+  suggestionsStatus.textContent = "Chargement des actus...";
+  suggestionsList.innerHTML = "";
+  articleDetail.hidden = true;
+  suggestionsList.hidden = false;
+
+  try {
+    const res = await fetch(`${WORKER_URL}/news`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur");
+
+    const groups = groupArticlesByDate(data.articles || []);
+    suggestionsStatus.textContent = Object.values(groups).every((g) => g.length === 0)
+      ? "Aucune actu disponible pour l'instant."
+      : "";
+
+    Object.entries(groups).forEach(([label, articles]) => {
+      if (articles.length === 0) return;
+      const heading = document.createElement("h3");
+      heading.className = "suggestions-heading";
+      heading.textContent = label;
+      suggestionsList.appendChild(heading);
+
+      articles.forEach((article) => suggestionsList.appendChild(buildArticleCard(article)));
+    });
+  } catch (err) {
+    suggestionsStatus.textContent = `Erreur actus : ${err.message}`;
+  }
+}
+
+function groupArticlesByDate(articles) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfThisWeek = new Date(startOfToday);
+  startOfThisWeek.setDate(startOfThisWeek.getDate() - startOfToday.getDay());
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+  const startOfWeekBefore = new Date(startOfLastWeek);
+  startOfWeekBefore.setDate(startOfWeekBefore.getDate() - 7);
+
+  const groups = {
+    "Aujourd'hui": [],
+    "Cette semaine": [],
+    "La semaine dernière": [],
+    "La semaine d'avant": [],
+    "Plus ancien": [],
+  };
+
+  articles.forEach((article) => {
+    const date = new Date(article.pubDate);
+    if (isNaN(date)) {
+      groups["Plus ancien"].push(article);
+    } else if (date >= startOfToday) {
+      groups["Aujourd'hui"].push(article);
+    } else if (date >= startOfThisWeek) {
+      groups["Cette semaine"].push(article);
+    } else if (date >= startOfLastWeek) {
+      groups["La semaine dernière"].push(article);
+    } else if (date >= startOfWeekBefore) {
+      groups["La semaine d'avant"].push(article);
+    } else {
+      groups["Plus ancien"].push(article);
+    }
+  });
+
+  return groups;
+}
+
+function buildArticleCard(article) {
+  const card = document.createElement("div");
+  card.className = "article-card";
+
+  const thumb = document.createElement("img");
+  thumb.className = "article-thumb";
+  thumb.src = article.image || "";
+  thumb.alt = "";
+  thumb.loading = "lazy";
+
+  const title = document.createElement("span");
+  title.textContent = article.title;
+
+  card.append(thumb, title);
+  card.addEventListener("click", () => openArticle(article));
+  return card;
+}
+
+function openArticle(article) {
+  currentArticle = article;
+  suggestionsList.hidden = true;
+  articleDetail.hidden = false;
+
+  articleTitleEl.textContent = article.title;
+  if (article.image) {
+    articleImageEl.src = article.image;
+    articleImageEl.hidden = false;
+  } else {
+    articleImageEl.hidden = true;
+  }
+  articleContentEl.textContent = article.description || "";
+  articleSourceLink.href = article.link;
+  articleSourceLink.innerHTML = `<span class="icon">${ICONS.link}</span><span>Voir la source</span>`;
+  articleDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
