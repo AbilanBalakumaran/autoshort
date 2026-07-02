@@ -1,6 +1,7 @@
 import { json, corsHeaders } from "./_utils.js";
 
 const MAX_IMAGES = 8;
+const MIN_IMAGES = 5;
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
@@ -17,8 +18,13 @@ export async function onRequestPost({ request }) {
 
   let images = show ? await fetchRealShowImages(show) : [];
 
-  if (images.length === 0) {
-    images = await fetchRealShowImages(prompt);
+  // If the show-specific search came up short (very obscure entry — thin
+  // gallery, no cast, no related entries), also pull in whatever the
+  // broader prompt search finds and merge it in, instead of only using it
+  // as an either/or fallback when the show search returned nothing at all.
+  if (images.length < MIN_IMAGES) {
+    const promptImages = await fetchRealShowImages(prompt);
+    images = [...new Set([...images, ...promptImages])].slice(0, MAX_IMAGES);
   }
 
   if (images.length === 0) {
@@ -64,6 +70,15 @@ async function fetchRealShowImages(query) {
       urls = [...new Set([...urls, ...shuffle(characterUrls)])];
     }
 
+    // Still short (very obscure entry, thin gallery and cast) — pull in
+    // pictures from the same franchise's other entries (sequels, movies,
+    // OVAs) so we can still guarantee a real, on-topic minimum instead of
+    // handing back a near-empty selection.
+    if (urls.length < MIN_IMAGES) {
+      const relatedUrls = await fetchRelatedShowImages(malId);
+      urls = [...new Set([...urls, ...shuffle(relatedUrls)])];
+    }
+
     return urls.slice(0, MAX_IMAGES);
   } catch {
     return [];
@@ -78,6 +93,33 @@ async function fetchCharacterImages(malId) {
     return (data.data || [])
       .map((c) => c.character?.images?.jpg?.image_url)
       .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchRelatedShowImages(malId) {
+  try {
+    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/relations`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const relatedIds = (data.data || [])
+      .flatMap((rel) => rel.entry || [])
+      .filter((e) => e.type === "anime")
+      .map((e) => e.mal_id)
+      .slice(0, 4);
+
+    const images = [];
+    for (const id of relatedIds) {
+      const picsRes = await fetch(`https://api.jikan.moe/v4/anime/${id}/pictures`);
+      if (!picsRes.ok) continue;
+      const picsData = await picsRes.json();
+      images.push(
+        ...(picsData.data || []).map((p) => p.jpg?.large_image_url || p.jpg?.image_url).filter(Boolean)
+      );
+      if (images.length >= MIN_IMAGES) break;
+    }
+    return images;
   } catch {
     return [];
   }

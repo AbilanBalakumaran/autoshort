@@ -351,6 +351,14 @@ function addVoiceCard(voice) {
     selectedVoiceId = voice.voice_id;
     document.querySelectorAll(".voice-card").forEach((c) => c.classList.remove("selected"));
     card.classList.add("selected");
+    // Persist immediately — voice choice must not depend on also clicking
+    // "Enregistrer" (which is for the template), or the selection silently
+    // has no effect on the next generation.
+    if (selectedVoiceId) {
+      localStorage.setItem(VOICE_STORAGE_KEY, selectedVoiceId);
+    } else {
+      localStorage.removeItem(VOICE_STORAGE_KEY);
+    }
   });
 
   voiceList.appendChild(card);
@@ -1435,10 +1443,18 @@ function buildArticleCard(article) {
   thumb.alt = "";
   thumb.loading = "lazy";
 
+  const textWrap = document.createElement("div");
+  textWrap.className = "article-card-text";
+
   const title = document.createElement("span");
   title.textContent = article.title;
 
-  card.append(thumb, title);
+  const source = document.createElement("span");
+  source.className = "article-card-source";
+  source.textContent = article.source || "";
+
+  textWrap.append(title, source);
+  card.append(thumb, textWrap);
   card.addEventListener("click", () => openArticle(article));
   return card;
 }
@@ -1457,6 +1473,7 @@ function openArticle(article) {
   }
   articleContentEl.textContent = article.description || "";
   articleSourceLink.href = article.link;
-  articleSourceLink.innerHTML = `<span class="icon">${ICONS.link}</span><span>Voir la source</span>`;
+  const sourceLabel = article.source ? `Voir la source (${article.source})` : "Voir la source";
+  articleSourceLink.innerHTML = `<span class="icon">${ICONS.link}</span><span>${sourceLabel}</span>`;
   articleDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }

@@ -735,9 +735,23 @@ button:disabled {
   background: #000;
 }
 
-.article-card span {
+.article-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.article-card-text span:first-child {
   font-size: 0.9rem;
   line-height: 1.35;
+}
+
+.article-card-source {
+  font-size: 0.72rem;
+  color: #E63946;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 #article-detail {
