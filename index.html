@@ -4,21 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Sukishort</title>
-<script>
-  // 100dvh can report a stale/incorrect value on cold launch of an iOS
-  // standalone PWA, only correcting itself after a scroll forces a
-  // reflow — which is why the nav bar sat too high until the first
-  // scroll. window.innerHeight is accurate immediately, so use that via
-  // a CSS variable instead, kept in sync on resize/orientation change.
-  (function () {
-    function setAppHeight() {
-      document.documentElement.style.setProperty("--app-height", window.innerHeight + "px");
-    }
-    setAppHeight();
-    window.addEventListener("resize", setAppHeight);
-    window.addEventListener("orientationchange", setAppHeight);
-  })();
-</script>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
