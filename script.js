@@ -1388,11 +1388,25 @@ async function refreshSuggestions() {
       heading.textContent = label;
       suggestionsList.appendChild(heading);
 
-      articles.forEach((article) => suggestionsList.appendChild(buildArticleCard(article)));
+      // Real news doesn't publish fast enough for the underlying article
+      // pool to actually change between two clicks a few seconds apart —
+      // shuffling within each date group (recency order is preserved at
+      // the group level) means the display still visibly changes every
+      // time "Actualiser" is pressed instead of showing the identical list.
+      shuffle(articles).forEach((article) => suggestionsList.appendChild(buildArticleCard(article)));
     });
   } catch (err) {
     suggestionsStatus.textContent = `Erreur actus : ${err.message}`;
   }
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function groupArticlesByDate(articles) {
