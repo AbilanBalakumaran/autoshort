@@ -40,6 +40,7 @@ body {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
 }
 
 main {
@@ -507,9 +508,10 @@ label {
 #debug-log {
   margin-top: 12px;
   padding: 12px;
-  border-radius: 8px;
-  background: #000;
-  color: #6f6;
+  border-radius: 10px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ccc;
   font-size: 0.72rem;
   line-height: 1.5;
   max-height: 220px;
