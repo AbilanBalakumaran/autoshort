@@ -16,7 +16,7 @@
 }
 
 :root {
-  --header-h: 60px;
+  --header-h: 50px;
   --nav-h: 50px;
 }
 
@@ -39,6 +39,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
 main {
@@ -112,14 +113,14 @@ main.wide {
   max-width: 480px;
   height: var(--nav-h);
   margin: 0 auto;
-  padding-top: 8px;
   display: flex;
-  justify-content: space-evenly;
   align-items: center;
+  justify-content: space-evenly;
 }
 
 .tab-btn {
   flex: none;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -127,6 +128,8 @@ main.wide {
   background: transparent;
   color: #888;
   border-radius: 8px;
+  border: none;
+  cursor: pointer;
 }
 
 .tab-btn .icon {
