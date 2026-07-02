@@ -832,14 +832,16 @@ function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
 
     const durationMs = audioBuffer.duration * 1000;
     const perImageMs = durationMs / images.length;
-    const subtitleWords = (subtitleText || "").trim().split(/\s+/).filter(Boolean);
-    // Only trust the real per-word timings if they line up 1:1 with our word
-    // split — otherwise fall back to even spacing rather than desyncing.
-    const timingsMs =
-      wordTimings && wordTimings.length === subtitleWords.length
-        ? wordTimings.map((s) => s * 1000)
-        : null;
-    log(timingsMs ? "Sous-titres calés sur les vrais timings ElevenLabs" : "Sous-titres à espacement égal (pas de timing réel disponible)");
+    // wordTimings.words/startTimes come from the same ElevenLabs alignment
+    // data and are paired 1:1 by construction, so they're always trustworthy
+    // — unlike re-splitting our own copy of the script, which can drift out
+    // of sync with what ElevenLabs actually said (e.g. numbers/dates).
+    const hasRealTimings = wordTimings?.words?.length && wordTimings.words.length === wordTimings.startTimes.length;
+    const subtitleWords = hasRealTimings
+      ? wordTimings.words
+      : (subtitleText || "").trim().split(/\s+/).filter(Boolean);
+    const timingsMs = hasRealTimings ? wordTimings.startTimes.map((s) => s * 1000) : null;
+    log(timingsMs ? "Sous-titres calés sur les vrais timings ElevenLabs (mots exacts de la voix)" : "Sous-titres à espacement égal (pas de timing réel disponible)");
 
     const startTime = performance.now();
     const bgCache = { img: null, canvas: null };

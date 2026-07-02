@@ -38,7 +38,11 @@ export async function onRequestPost({ request, env }) {
     const data = await elevenRes.json();
     // Real per-word start times (from ElevenLabs' character-level alignment)
     // let the montage sync subtitles to when each word is actually spoken,
-    // instead of assuming every word takes the same amount of time.
+    // instead of assuming every word takes the same amount of time. The
+    // words themselves are derived from the same alignment data as the
+    // timings, so they're always paired 1:1 — no risk of a length mismatch
+    // against a separately-split client-side copy of the script (which can
+    // drift if ElevenLabs normalizes numbers/dates internally).
     const wordTimings = computeWordTimings(data.alignment || data.normalized_alignment);
 
     return json({ audioBase64: data.audio_base64, wordTimings, source: "elevenlabs" });
@@ -73,26 +77,31 @@ function computeWordTimings(alignment) {
   if (!alignment?.characters?.length) return null;
 
   const { characters, character_start_times_seconds } = alignment;
-  const timings = [];
+  const words = [];
+  const startTimes = [];
   let wordStart = null;
-  let hasWordChars = false;
+  let wordChars = "";
 
   for (let i = 0; i < characters.length; i++) {
     const ch = characters[i];
     if (/\s/.test(ch)) {
-      if (hasWordChars) {
-        timings.push(wordStart);
-        hasWordChars = false;
+      if (wordChars) {
+        words.push(wordChars);
+        startTimes.push(wordStart);
+        wordChars = "";
         wordStart = null;
       }
     } else {
       if (wordStart === null) wordStart = character_start_times_seconds[i];
-      hasWordChars = true;
+      wordChars += ch;
     }
   }
-  if (hasWordChars) timings.push(wordStart);
+  if (wordChars) {
+    words.push(wordChars);
+    startTimes.push(wordStart);
+  }
 
-  return timings;
+  return { words, startTimes };
 }
 
 async function streamToBase64(stream) {
