@@ -1337,6 +1337,12 @@ async function renderHistory() {
 
 // ---------- Suggestions (actus) ----------
 
+const FALLBACK_ARTICLE_IMAGE = "icon.svg";
+// img.src always reads back as the fully-resolved absolute URL, even when
+// set to a relative path — precomputed here so the error handler can
+// compare against it without triggering itself in a loop.
+const FALLBACK_ARTICLE_IMAGE_ABSOLUTE = new URL(FALLBACK_ARTICLE_IMAGE, window.location.href).href;
+
 let currentArticle = null;
 let suggestionsLoaded = false;
 
@@ -1453,9 +1459,14 @@ function buildArticleCard(article) {
 
   const thumb = document.createElement("img");
   thumb.className = "article-thumb";
-  thumb.src = article.image || "";
+  thumb.src = article.image || FALLBACK_ARTICLE_IMAGE;
   thumb.alt = "";
   thumb.loading = "lazy";
+  // Some sources' image URLs occasionally 404 or hotlink-block at runtime
+  // even when the article had one — fall back instead of a broken icon.
+  thumb.addEventListener("error", () => {
+    if (thumb.src !== FALLBACK_ARTICLE_IMAGE_ABSOLUTE) thumb.src = FALLBACK_ARTICLE_IMAGE;
+  });
 
   const textWrap = document.createElement("div");
   textWrap.className = "article-card-text";
@@ -1480,6 +1491,7 @@ function openArticle(article) {
 
   articleTitleEl.textContent = article.title;
   if (article.image) {
+    articleImageEl.onerror = () => (articleImageEl.hidden = true);
     articleImageEl.src = article.image;
     articleImageEl.hidden = false;
   } else {
