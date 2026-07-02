@@ -17,7 +17,7 @@
 
 :root {
   --header-h: 60px;
-  --nav-h: 68px;
+  --nav-h: 44px;
 }
 
 html {
@@ -123,20 +123,20 @@ main.wide {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 6px 4px;
+  gap: 2px;
+  padding: 4px 4px;
   background: transparent;
   color: #888;
   border-radius: 0;
 }
 
 .tab-btn .icon {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
 .tab-label {
-  font-size: 0.68rem;
+  font-size: 0.6rem;
 }
 
 .tab-btn.active {
