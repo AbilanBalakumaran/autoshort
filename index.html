@@ -26,6 +26,32 @@
 <link rel="apple-touch-startup-image" href="splash/apple-splash-640-1136.png" media="screen and (device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
 </head>
 <body>
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <div class="sidebar-brand">
+        <img src="icon.svg" alt="" />
+        <span>SUKISHORT</span>
+      </div>
+      <button type="button" class="tab-btn active" data-tab="generate">
+        <span class="icon"></span>
+        <span class="tab-label">Accueil</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="suggestions">
+        <span class="icon"></span>
+        <span class="tab-label">Suggestions</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="history">
+        <span class="icon"></span>
+        <span class="tab-label">Historique</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="settings">
+        <span class="icon"></span>
+        <span class="tab-label">Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="app-shell">
   <header class="app-header">
     <div class="app-header-inner">
       <button type="button" id="app-logo" class="app-logo" aria-label="Accueil">
@@ -178,27 +204,7 @@
       <p id="settings-status"></p>
     </section>
   </main>
-
-  <nav class="bottom-nav">
-    <div class="bottom-nav-inner">
-      <button type="button" class="tab-btn active" data-tab="generate">
-        <span class="icon"></span>
-        <span class="tab-label">Accueil</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="suggestions">
-        <span class="icon"></span>
-        <span class="tab-label">Suggestions</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="history">
-        <span class="icon"></span>
-        <span class="tab-label">Historique</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="settings">
-        <span class="icon"></span>
-        <span class="tab-label">Settings</span>
-      </button>
-    </div>
-  </nav>
+  </div>
 
   <script src="script.js"></script>
 </body>
