@@ -1466,20 +1466,26 @@ function groupArticlesByDate(articles) {
   startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
   const startOfWeekBefore = new Date(startOfLastWeek);
   startOfWeekBefore.setDate(startOfWeekBefore.getDate() - 7);
+  // Month buckets beyond the last ~3 weeks, going back up to 3 months —
+  // anything older than that is dropped so the list stays relevant.
+  const startOfMonth1Ago = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+  const startOfMonth2Ago = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
+  const startOfMonth3Ago = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
 
   const groups = {
     "Aujourd'hui": [],
     "Cette semaine": [],
     "La semaine dernière": [],
     "La semaine d'avant": [],
-    "Plus ancien": [],
+    "Il y a 1 mois": [],
+    "Il y a 2 mois": [],
+    "Il y a 3 mois": [],
   };
 
   articles.forEach((article) => {
     const date = new Date(article.pubDate);
-    if (isNaN(date)) {
-      groups["Plus ancien"].push(article);
-    } else if (date >= startOfToday) {
+    if (isNaN(date)) return;
+    if (date >= startOfToday) {
       groups["Aujourd'hui"].push(article);
     } else if (date >= startOfThisWeek) {
       groups["Cette semaine"].push(article);
@@ -1487,9 +1493,14 @@ function groupArticlesByDate(articles) {
       groups["La semaine dernière"].push(article);
     } else if (date >= startOfWeekBefore) {
       groups["La semaine d'avant"].push(article);
-    } else {
-      groups["Plus ancien"].push(article);
+    } else if (date >= startOfMonth1Ago) {
+      groups["Il y a 1 mois"].push(article);
+    } else if (date >= startOfMonth2Ago) {
+      groups["Il y a 2 mois"].push(article);
+    } else if (date >= startOfMonth3Ago) {
+      groups["Il y a 3 mois"].push(article);
     }
+    // Older than 3 months: dropped, not shown.
   });
 
   return groups;

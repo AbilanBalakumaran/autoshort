@@ -104,7 +104,10 @@ main.wide {
 
 .bottom-nav {
   flex: none;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Capped to the icon size (24px) instead of the full safe-area inset
+     (~34px on iPhones with a home indicator) — the full value left too
+     much empty space below the bar relative to the app's content area. */
+  padding-bottom: min(env(safe-area-inset-bottom, 0px), 24px);
   background: #0a0a0a;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
