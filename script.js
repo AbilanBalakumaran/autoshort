@@ -650,9 +650,20 @@ async function generateImages() {
   timelineStep.hidden = true;
   status.textContent = "Génération des images en cours...";
 
-  try {
-    const stylePrompt = currentVisualStyle || currentVoiceScript || promptInput.value;
+  const stylePrompt = currentVisualStyle || currentVoiceScript || promptInput.value;
+  const searchQuery =
+    currentShowName && currentShowName.toLowerCase() !== "anime" ? currentShowName : stylePrompt;
 
+  // AniList refuses requests coming from Cloudflare's servers (403) but its
+  // API is CORS-open, so the browser queries it directly here — in parallel
+  // with the backend's MAL/Kitsu search — and the two pools get merged.
+  // This also means AniList keeps supplying images even when the backend or
+  // its sources are down.
+  const aniListPromise = fetchAniListImagesClient(searchQuery);
+
+  let backendImages = [];
+  let backendError = null;
+  try {
     const res = await fetch(`${WORKER_URL}/generate-images`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -667,8 +678,15 @@ async function generateImages() {
       const details = data.details ? ` — ${data.details}` : "";
       throw new Error((data.error || "Erreur de génération d'images") + details);
     }
+    backendImages = data.images || [];
+  } catch (err) {
+    backendError = err;
+  }
 
-    const images = [...new Set(data.images || [])];
+  const aniListImages = await aniListPromise;
+
+  try {
+    const images = [...new Set([...backendImages, ...aniListImages])].slice(0, 30);
 
     // A video generated from a Suggestion article always has the article's
     // own image on hand — guarantee it's offered even if the image search
@@ -677,6 +695,11 @@ async function generateImages() {
     if (currentSuggestionImage && !images.includes(currentSuggestionImage)) {
       images.unshift(currentSuggestionImage);
     }
+
+    // Only surface a hard failure if it actually left us with nothing —
+    // when AniList (or the suggestion image) filled the grid anyway, the
+    // backend hiccup is invisible to the user and should stay that way.
+    if (images.length === 0 && backendError) throw backendError;
 
     // On the very first batch, pre-select up to 5 images so the user doesn't
     // have to click each one manually.
@@ -716,6 +739,47 @@ async function generateImages() {
   } finally {
     regenerateImagesBtn.disabled = false;
     confirmImagesBtn.disabled = false;
+  }
+}
+
+// Queried straight from the browser because AniList 403s Cloudflare-origin
+// requests — the backend can't do this one for us. Top 2 matches so a
+// franchise's other seasons contribute art too, plus main-cast portraits.
+async function fetchAniListImagesClient(query) {
+  if (!query) return [];
+  try {
+    const gqlQuery = `
+      query ($search: String) {
+        Page(perPage: 2) {
+          media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+            coverImage { extraLarge large }
+            bannerImage
+            characters(sort: ROLE, perPage: 12) {
+              nodes { image { large } }
+            }
+          }
+        }
+      }
+    `;
+
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: gqlQuery, variables: { search: query } }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const mediaList = data.data?.Page?.media || [];
+
+    const urls = mediaList.flatMap((media) => [
+      media.coverImage?.extraLarge || media.coverImage?.large,
+      media.bannerImage,
+      ...(media.characters?.nodes || []).map((n) => n.image?.large),
+    ]);
+
+    return [...new Set(urls.filter(Boolean))];
+  } catch {
+    return [];
   }
 }
 

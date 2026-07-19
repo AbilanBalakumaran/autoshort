@@ -1,38 +1,46 @@
 import { json, corsHeaders } from "./_utils.js";
 
-const MAX_IMAGES = 8;
-const MIN_IMAGES = 5;
+const MAX_IMAGES = 24;
+const MIN_IMAGES = 8;
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
 }
 
+// Per-source failure notes for the current invocation — surfaced via the
+// `debug` request flag so a source silently dropping out (blocked UA, rate
+// limit, outage) can be diagnosed in production without redeploying.
+let sourceErrors = {};
+
 export async function onRequestPost({ request }) {
-  const { prompt, showName } = await request.json();
+  const { prompt, showName, debug } = await request.json();
+  sourceErrors = {};
 
   if (!prompt) {
     return json({ error: "Missing 'prompt'" }, 400);
   }
 
   const show = showName && showName.toLowerCase() !== "anime" ? showName.trim() : "";
+  const query = show || prompt;
 
-  let images = show ? await fetchRealShowImages(show) : [];
+  // Query all three independent anime databases in parallel and merge —
+  // the goal is a rich pool of on-topic images so the user never has to
+  // leave the app to hunt for pictures themselves. Each source covers the
+  // others' gaps (MAL has deep galleries, AniList catches alternate
+  // romanizations/very recent releases, Kitsu adds distinct poster art).
+  const [malImages, aniListImages, kitsuImages] = await Promise.all([
+    fetchRealShowImages(query),
+    fetchAniListImages(query),
+    fetchKitsuImages(query),
+  ]);
 
-  // If the show-specific search came up short (very obscure entry — thin
-  // gallery, no cast, no related entries), also pull in whatever the
-  // broader prompt search finds and merge it in, instead of only using it
-  // as an either/or fallback when the show search returned nothing at all.
-  if (images.length < MIN_IMAGES) {
+  let images = interleave([malImages, aniListImages, kitsuImages]).slice(0, MAX_IMAGES);
+
+  // Still short and the show-specific search may have missed (very obscure
+  // entry) — retry the whole prompt text as a broader search.
+  if (images.length < MIN_IMAGES && show && prompt !== show) {
     const promptImages = await fetchRealShowImages(prompt);
     images = [...new Set([...images, ...promptImages])].slice(0, MAX_IMAGES);
-  }
-
-  // MyAnimeList/Jikan doesn't recognize every title (alternate romanizations,
-  // very recent releases, obscure entries) — AniList is a second, independent
-  // anime database that often succeeds where MAL's search comes up empty.
-  if (images.length < MIN_IMAGES) {
-    const aniListImages = await fetchAniListImages(show || prompt);
-    images = [...new Set([...images, ...aniListImages])].slice(0, MAX_IMAGES);
   }
 
   if (images.length === 0) {
@@ -45,7 +53,14 @@ export async function onRequestPost({ request }) {
     );
   }
 
-  return json({ images, source: "web" });
+  const payload = { images, source: "web" };
+  if (debug) {
+    payload.debug = {
+      counts: { mal: malImages.length, aniList: aniListImages.length, kitsu: kitsuImages.length },
+      errors: sourceErrors,
+    };
+  }
+  return json(payload);
 }
 
 async function fetchRealShowImages(query) {
@@ -53,7 +68,7 @@ async function fetchRealShowImages(query) {
     const searchRes = await fetch(
       `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`
     );
-    if (!searchRes.ok) return [];
+    if (!searchRes.ok) throw new Error(`Jikan HTTP ${searchRes.status}`);
     const searchData = await searchRes.json();
     const malId = searchData.data?.[0]?.mal_id;
     const mainImage = searchData.data?.[0]?.images?.jpg?.large_image_url;
@@ -88,7 +103,8 @@ async function fetchRealShowImages(query) {
     }
 
     return urls.slice(0, MAX_IMAGES);
-  } catch {
+  } catch (err) {
+    sourceErrors.mal = err.message || String(err);
     return [];
   }
 }
@@ -139,13 +155,18 @@ async function fetchRelatedShowImages(malId) {
 async function fetchAniListImages(query) {
   if (!query) return [];
   try {
+    // Top 2 matches (not just 1): sequels/seasons are separate AniList
+    // entries of the same franchise, so the runner-up usually adds more
+    // on-topic art rather than noise.
     const gqlQuery = `
       query ($search: String) {
-        Media(search: $search, type: ANIME) {
-          coverImage { extraLarge large }
-          bannerImage
-          characters(sort: ROLE, perPage: 8) {
-            nodes { image { large } }
+        Page(perPage: 2) {
+          media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+            coverImage { extraLarge large }
+            bannerImage
+            characters(sort: ROLE, perPage: 12) {
+              nodes { image { large } }
+            }
           }
         }
       }
@@ -153,24 +174,68 @@ async function fetchAniListImages(query) {
 
     const res = await fetch("https://graphql.anilist.co", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        // Same story as Anime Corner in news.js: some services reject
+        // requests without a recognizable browser User-Agent.
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
       body: JSON.stringify({ query: gqlQuery, variables: { search: query } }),
     });
-    if (!res.ok) return [];
+    if (!res.ok) throw new Error(`AniList HTTP ${res.status}`);
     const data = await res.json();
-    const media = data.data?.Media;
-    if (!media) return [];
+    const mediaList = data.data?.Page?.media || [];
 
-    const urls = [
+    const urls = mediaList.flatMap((media) => [
       media.coverImage?.extraLarge || media.coverImage?.large,
       media.bannerImage,
       ...(media.characters?.nodes || []).map((n) => n.image?.large),
-    ].filter(Boolean);
+    ]);
 
-    return [...new Set(urls)];
+    return [...new Set(urls.filter(Boolean))];
+  } catch (err) {
+    sourceErrors.aniList = err.message || String(err);
+    return [];
+  }
+}
+
+// Third independent database — Kitsu's poster/cover art is largely distinct
+// from MAL's and AniList's, so it widens the pool rather than duplicating it.
+async function fetchKitsuImages(query) {
+  if (!query) return [];
+  try {
+    const res = await fetch(
+      `https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(query)}&page[limit]=3`,
+      { headers: { Accept: "application/vnd.api+json" } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    const urls = (data.data || []).flatMap((entry) => [
+      entry.attributes?.posterImage?.original || entry.attributes?.posterImage?.large,
+      entry.attributes?.coverImage?.original || entry.attributes?.coverImage?.large,
+    ]);
+
+    return [...new Set(urls.filter(Boolean))];
   } catch {
     return [];
   }
+}
+
+// Round-robin merge so every source is represented near the top of the
+// grid, instead of one source's full batch pushing the others below the
+// MAX_IMAGES cutoff.
+function interleave(lists) {
+  const merged = [];
+  const longest = Math.max(...lists.map((l) => l.length), 0);
+  for (let i = 0; i < longest; i++) {
+    for (const list of lists) {
+      if (i < list.length) merged.push(list[i]);
+    }
+  }
+  return [...new Set(merged)];
 }
 
 function shuffle(arr) {
