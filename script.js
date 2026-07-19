@@ -1235,7 +1235,21 @@ function loadImage(src) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Impossible de charger une image (${src})`));
+    img.onerror = () => {
+      // Plenty of source CDNs display fine in the grid but refuse the
+      // crossOrigin load the canvas needs — retry through our proxy,
+      // which serves the same bytes with permissive CORS. Without this,
+      // those images were silently dropped from the montage.
+      if (src.startsWith("data:") || src.startsWith("blob:")) {
+        reject(new Error(`Impossible de charger une image (${src.slice(0, 80)})`));
+        return;
+      }
+      const retry = new Image();
+      retry.crossOrigin = "anonymous";
+      retry.onload = () => resolve(retry);
+      retry.onerror = () => reject(new Error(`Impossible de charger une image (${src})`));
+      retry.src = `${WORKER_URL}/image-proxy?url=${encodeURIComponent(src)}`;
+    };
     img.src = src;
   });
 }
@@ -1373,10 +1387,20 @@ function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn, bgCache
 
 // ctx.filter = "blur(...)" isn't reliably applied on every browser/mobile
 // device (some silently ignore it, leaving the background sharp instead of
-// blurred). Downsampling the image to a tiny canvas then scaling it back up
-// produces the blur via plain image interpolation, which every canvas
-// implementation supports the same way.
-const BLUR_DOWNSCALE = 24;
+// blurred). Downsampling then upsampling produces the blur via plain image
+// interpolation instead — and doing it PROGRESSIVELY (halving/doubling in
+// 2x steps) is what makes it look like a real soft gaussian blur: a single
+// big jump only samples a handful of pixels and comes out as a blocky
+// pixelated mosaic, which is exactly what users saw behind the images.
+function makeSmoothCanvas(w, h) {
+  const c = document.createElement("canvas");
+  c.width = Math.max(2, Math.round(w));
+  c.height = Math.max(2, Math.round(h));
+  const cctx = c.getContext("2d");
+  cctx.imageSmoothingEnabled = true;
+  cctx.imageSmoothingQuality = "high";
+  return c;
+}
 
 function getBlurredBackground(img, canvasW, canvasH, cache) {
   if (cache.img === img) return cache.canvas;
@@ -1387,22 +1411,26 @@ function getBlurredBackground(img, canvasW, canvasH, cache) {
   const w = img.width * scale;
   const h = img.height * scale;
 
-  const tinyW = Math.max(1, Math.round(canvasW / BLUR_DOWNSCALE));
-  const tinyH = Math.max(1, Math.round(canvasH / BLUR_DOWNSCALE));
-  const tiny = document.createElement("canvas");
-  tiny.width = tinyW;
-  tiny.height = tinyH;
-  tiny
-    .getContext("2d")
-    .drawImage(img, (tinyW - w / BLUR_DOWNSCALE) / 2, (tinyH - h / BLUR_DOWNSCALE) / 2, w / BLUR_DOWNSCALE, h / BLUR_DOWNSCALE);
+  // Cover-draw at half resolution, then keep halving down to ~1/16.
+  const f = 0.5;
+  let cur = makeSmoothCanvas(canvasW * f, canvasH * f);
+  cur.getContext("2d").drawImage(img, (canvasW * f - w * f) / 2, (canvasH * f - h * f) / 2, w * f, h * f);
+  for (let i = 0; i < 3; i++) {
+    const next = makeSmoothCanvas(cur.width / 2, cur.height / 2);
+    next.getContext("2d").drawImage(cur, 0, 0, next.width, next.height);
+    cur = next;
+  }
 
-  const off = document.createElement("canvas");
-  off.width = canvasW;
-  off.height = canvasH;
+  // Back up in 2x steps — each doubling interpolates smoothly.
+  while (cur.width * 2 < canvasW) {
+    const next = makeSmoothCanvas(cur.width * 2, cur.height * 2);
+    next.getContext("2d").drawImage(cur, 0, 0, next.width, next.height);
+    cur = next;
+  }
+
+  const off = makeSmoothCanvas(canvasW, canvasH);
   const offCtx = off.getContext("2d");
-  offCtx.imageSmoothingEnabled = true;
-  offCtx.imageSmoothingQuality = "high";
-  offCtx.drawImage(tiny, 0, 0, canvasW, canvasH);
+  offCtx.drawImage(cur, 0, 0, canvasW, canvasH);
 
   // Darken so the sharp foreground image pops — a plain overlay works
   // everywhere, unlike ctx.filter's brightness() which has the same
@@ -1525,10 +1553,10 @@ function generateThumbnail(img, titleText, canvasW, canvasH) {
   return canvas.toDataURL("image/jpeg", 0.9);
 }
 
-// Small "SUKISHORT" pill in the top-left corner, in the app's red — the
+// Small "SukiAMV" pill in the top-left corner, in the app's red — the
 // same branding treatment a hand-made channel thumbnail would carry.
 function drawBrandBadge(ctx) {
-  const text = "SUKISHORT";
+  const text = "SukiAMV";
   ctx.font = '700 24px "Obelix Pro", "Arial Black", system-ui, sans-serif';
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
@@ -1578,8 +1606,11 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
 
-  const lineHeight = fontSize * 1.15;
-  const startY = canvasH - 46 - (lines.length - 1) * lineHeight;
+  // The outlines visually thicken each glyph by ~0.2 x fontSize on every
+  // side, so the line box needs generous spacing — a tighter 1.15 line
+  // height made adjacent lines' rims collide and overlap.
+  const lineHeight = fontSize * 1.5;
+  const startY = canvasH - 56 - (lines.length - 1) * lineHeight;
 
   lines.forEach((line, i) => {
     const y = startY + i * lineHeight;
@@ -1587,15 +1618,15 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
     // Three-pass GFX treatment in the app's palette: black outer rim with
     // a drop shadow, red mid outline, white fill.
     ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = 12;
     ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 6;
-    ctx.lineWidth = fontSize * 0.3;
+    ctx.shadowOffsetY = 5;
+    ctx.lineWidth = fontSize * 0.22;
     ctx.strokeStyle = "#000000";
     ctx.strokeText(line, canvasW / 2, y);
 
     ctx.shadowColor = "transparent";
-    ctx.lineWidth = fontSize * 0.14;
+    ctx.lineWidth = fontSize * 0.1;
     ctx.strokeStyle = "#E63946";
     ctx.strokeText(line, canvasW / 2, y);
 
