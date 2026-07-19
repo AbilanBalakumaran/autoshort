@@ -915,6 +915,17 @@ function addImageCard(src) {
   img.src = src;
   img.alt = "Image proposée";
   img.loading = "lazy";
+  // Dead/hotlink-blocked URLs remove themselves from the grid and the
+  // selection so a broken image can never make it into the montage.
+  img.onerror = () => {
+    const i = selectedImages.indexOf(src);
+    if (i !== -1) {
+      selectedImages.splice(i, 1);
+      updateConfirmLabel();
+      if (!timelineStep.hidden) renderTimeline();
+    }
+    card.remove();
+  };
 
   const badge = document.createElement("span");
   badge.className = "image-check";
@@ -1100,7 +1111,18 @@ async function generateMontage() {
 
   try {
     const imageUrls = [...selectedImages];
-    const images = await Promise.all(imageUrls.map(loadImage));
+    // A source image can 404 or hotlink-block between selection time and
+    // now — skip the broken ones and build the montage with the rest
+    // instead of failing the whole generation over one dead URL.
+    const settled = await Promise.allSettled(imageUrls.map(loadImage));
+    const images = settled.filter((s) => s.status === "fulfilled").map((s) => s.value);
+    const failed = settled.length - images.length;
+    if (failed > 0) log(`${failed} image(s) ignorée(s) (lien mort ou bloqué)`);
+    if (images.length === 0) {
+      throw new Error(
+        "Aucune des images sélectionnées n'a pu être chargée — remplace-les ou uploade les tiennes."
+      );
+    }
     log(`${images.length} image(s) chargée(s)`);
 
     await document.fonts.load('700 90px "Obelix Pro"');
