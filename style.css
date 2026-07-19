@@ -334,8 +334,10 @@ label {
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.voice-card:hover {
-  border-color: rgba(230, 57, 70, 0.6);
+@media (hover: hover) {
+  .voice-card:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
 }
 
 .voice-card.selected {
@@ -495,8 +497,10 @@ label {
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
-.image-card:hover {
-  transform: scale(1.02);
+@media (hover: hover) {
+  .image-card:hover {
+    transform: scale(1.02);
+  }
 }
 
 .image-card img {
@@ -725,8 +729,10 @@ label {
   cursor: pointer;
 }
 
-.title-item:hover {
-  border-color: rgba(230, 57, 70, 0.6);
+@media (hover: hover) {
+  .title-item:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
 }
 
 .copy-row {
@@ -734,6 +740,44 @@ label {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  position: relative;
+}
+
+.copy-row.copied::after {
+  content: "Copié !";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #E63946;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.copy-hint {
+  color: #777;
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.thumbnail-preview {
+  width: 100%;
+  max-width: 320px;
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 10px;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  background: #000;
+}
+
+#thumbnail-download,
+#history-detail-thumbnail-download {
+  max-width: 320px;
+  margin: 0 auto 20px;
 }
 
 .copy-textarea {
@@ -831,9 +875,11 @@ button:disabled {
   color: #aaa;
 }
 
-.upload-tile:hover {
-  border-color: rgba(230, 57, 70, 0.6);
-  color: #f0f0f5;
+@media (hover: hover) {
+  .upload-tile:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+    color: #f0f0f5;
+  }
 }
 
 .upload-tile .icon {
@@ -868,8 +914,10 @@ button:disabled {
   transition: border-color 0.15s ease;
 }
 
-.article-card:hover {
-  border-color: rgba(230, 57, 70, 0.6);
+@media (hover: hover) {
+  .article-card:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
 }
 
 .article-thumb {
@@ -942,8 +990,10 @@ button:disabled {
   height: 16px;
 }
 
-#article-source-link:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  #article-source-link:hover {
+    text-decoration: underline;
+  }
 }
 
 #article-generate-btn {
@@ -973,8 +1023,10 @@ button:disabled {
   transition: border-color 0.15s ease;
 }
 
-.history-card:hover {
-  border-color: rgba(230, 57, 70, 0.6);
+@media (hover: hover) {
+  .history-card:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
 }
 
 .history-thumb {

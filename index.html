@@ -121,17 +121,19 @@
           <label>Titres suggérés</label>
           <div id="titles-list" class="titles-list"></div>
 
-          <label for="description-output">Description</label>
+          <label for="description-output">Description <span class="copy-hint">(clique pour copier)</span></label>
           <div class="copy-row">
             <textarea id="description-output" class="copy-textarea" readonly></textarea>
-            <button type="button" id="copy-description-btn" class="icon-btn"></button>
           </div>
 
-          <label for="tags-output">Tags YouTube</label>
+          <label for="tags-output">Tags YouTube <span class="copy-hint">(clique pour copier)</span></label>
           <div class="copy-row">
             <textarea id="tags-output" class="copy-textarea copy-textarea-small" readonly></textarea>
-            <button type="button" id="copy-tags-btn" class="icon-btn"></button>
           </div>
+
+          <label>Miniature YouTube</label>
+          <img id="thumbnail-preview" class="thumbnail-preview" alt="" hidden />
+          <a id="thumbnail-download" class="download-link icon-btn" download="sukishort-miniature.jpg" hidden></a>
         </section>
       </section>
     </section>
@@ -168,17 +170,19 @@
         <label>Titres suggérés</label>
         <div id="history-detail-titles" class="titles-list"></div>
 
-        <label for="history-detail-description">Description</label>
+        <label for="history-detail-description">Description <span class="copy-hint">(clique pour copier)</span></label>
         <div class="copy-row">
           <textarea id="history-detail-description" class="copy-textarea" readonly></textarea>
-          <button type="button" id="history-copy-description-btn" class="icon-btn"></button>
         </div>
 
-        <label for="history-detail-tags">Tags YouTube</label>
+        <label for="history-detail-tags">Tags YouTube <span class="copy-hint">(clique pour copier)</span></label>
         <div class="copy-row">
           <textarea id="history-detail-tags" class="copy-textarea copy-textarea-small" readonly></textarea>
-          <button type="button" id="history-copy-tags-btn" class="icon-btn"></button>
         </div>
+
+        <label>Miniature</label>
+        <img id="history-detail-thumbnail" class="thumbnail-preview" alt="" hidden />
+        <a id="history-detail-thumbnail-download" class="download-link icon-btn" download="sukishort-miniature.jpg" hidden></a>
       </section>
     </section>
 

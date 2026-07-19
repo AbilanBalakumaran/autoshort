@@ -76,8 +76,8 @@ const metadataStep = document.getElementById("metadata-step");
 const titlesList = document.getElementById("titles-list");
 const descriptionOutput = document.getElementById("description-output");
 const tagsOutput = document.getElementById("tags-output");
-const copyDescriptionBtn = document.getElementById("copy-description-btn");
-const copyTagsBtn = document.getElementById("copy-tags-btn");
+const thumbnailPreview = document.getElementById("thumbnail-preview");
+const thumbnailDownload = document.getElementById("thumbnail-download");
 const debugLog = document.getElementById("debug-log");
 
 const suggestionsStatus = document.getElementById("suggestions-status");
@@ -100,8 +100,8 @@ const historyDetailDownload = document.getElementById("history-detail-download")
 const historyDetailTitles = document.getElementById("history-detail-titles");
 const historyDetailDescription = document.getElementById("history-detail-description");
 const historyDetailTags = document.getElementById("history-detail-tags");
-const historyCopyDescriptionBtn = document.getElementById("history-copy-description-btn");
-const historyCopyTagsBtn = document.getElementById("history-copy-tags-btn");
+const historyDetailThumbnail = document.getElementById("history-detail-thumbnail");
+const historyDetailThumbnailDownload = document.getElementById("history-detail-thumbnail-download");
 
 function log(msg) {
   debugLog.hidden = false;
@@ -277,13 +277,11 @@ function initButtons() {
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
   montageDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
   historyDetailDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
-  copyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
-  copyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
+  thumbnailDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
+  historyDetailThumbnailDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
   articleBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
   articleGenerateBtn.innerHTML = iconLabel("film", "Générer en short");
   historyBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
-  historyCopyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
-  historyCopyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
   refreshSuggestionsBtn.innerHTML = iconLabel("refresh", "Actualiser les actus");
   setNavIcon("generate", "home");
   setNavIcon("suggestions", "compass");
@@ -650,10 +648,23 @@ confirmImagesBtn.addEventListener("click", () => {
 
 montageBtn.addEventListener("click", generateMontage);
 
-copyDescriptionBtn.addEventListener("click", () => copyToClipboard(descriptionOutput.value, copyDescriptionBtn, "Copier la description"));
-copyTagsBtn.addEventListener("click", () => copyToClipboard(tagsOutput.value, copyTagsBtn, "Copier les tags"));
-descriptionOutput.addEventListener("click", () => copyToClipboard(descriptionOutput.value, copyDescriptionBtn, "Copier la description"));
-tagsOutput.addEventListener("click", () => copyToClipboard(tagsOutput.value, copyTagsBtn, "Copier les tags"));
+descriptionOutput.addEventListener("click", () => copyFromTextarea(descriptionOutput));
+tagsOutput.addEventListener("click", () => copyFromTextarea(tagsOutput));
+
+// The copy buttons are gone — clicking the text zone itself copies, with a
+// brief "Copié !" badge overlaid on the zone as feedback.
+async function copyFromTextarea(textarea) {
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+    const row = textarea.closest(".copy-row");
+    if (row) {
+      row.classList.add("copied");
+      setTimeout(() => row.classList.remove("copied"), 1500);
+    }
+  } catch {
+    status.textContent = "Impossible de copier automatiquement, sélectionne le texte manuellement.";
+  }
+}
 
 async function copyToClipboard(text, btn, label) {
   try {
@@ -1019,23 +1030,23 @@ function renderTimeline() {
   });
 }
 
-function moveImage(from, to) {
-  const [item] = selectedImages.splice(from, 1);
-  selectedImages.splice(to, 0, item);
-  renderTimeline();
-}
-
 // Pointer Events unify mouse (desktop drag) and touch (mobile press-and-drag
 // from the handle) into a single implementation.
 function startDrag(e, src) {
   e.preventDefault();
   draggedSrc = src;
-  renderTimeline();
+  // CRITICAL for touch: never rebuild the timeline DOM mid-gesture. Touch
+  // pointers implicitly capture to the element that received pointerdown
+  // (the handle) — destroying it via renderTimeline() silently killed the
+  // whole drag on iOS, which is why reordering "didn't take" on mobile.
+  // Instead, move the live row element and only re-render on release.
+  const dragRow = e.target.closest(".timeline-row");
+  dragRow?.classList.add("dragging");
 
   const onPointerMove = (moveEvent) => {
     const el = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
     const targetRow = el?.closest(".timeline-row");
-    if (!targetRow) return;
+    if (!targetRow || targetRow === dragRow) return;
 
     const targetSrc = targetRow.dataset.src;
     if (!targetSrc || targetSrc === draggedSrc) return;
@@ -1043,7 +1054,12 @@ function startDrag(e, src) {
     const from = selectedImages.indexOf(draggedSrc);
     const to = selectedImages.indexOf(targetSrc);
     if (from !== -1 && to !== -1 && from !== to) {
-      moveImage(from, to);
+      const [item] = selectedImages.splice(from, 1);
+      selectedImages.splice(to, 0, item);
+      if (dragRow) {
+        if (from < to) targetRow.after(dragRow);
+        else targetRow.before(dragRow);
+      }
     }
   };
 
@@ -1052,6 +1068,8 @@ function startDrag(e, src) {
     document.removeEventListener("pointermove", onPointerMove);
     document.removeEventListener("pointerup", onPointerUp);
     document.removeEventListener("pointercancel", onPointerUp);
+    // Safe to fully re-render now — the gesture is over. This refreshes
+    // the per-image time ranges and text segments for the new order.
     renderTimeline();
   };
 
@@ -1150,6 +1168,11 @@ async function generateMontage() {
 
     const thumbnailTitle = metadata?.titles?.[0] || currentShowName || currentVoiceScript.slice(0, 40);
     const thumbnail = generateThumbnail(images[0], thumbnailTitle, montageCanvas.width, montageCanvas.height);
+
+    thumbnailPreview.src = thumbnail;
+    thumbnailPreview.hidden = false;
+    thumbnailDownload.href = thumbnail;
+    thumbnailDownload.hidden = false;
 
     await saveToHistory({
       voiceScript: currentVoiceScript,
@@ -1486,18 +1509,51 @@ function generateThumbnail(img, titleText, canvasW, canvasH) {
   // the montage's "contain" letterboxing during playback.
   drawScaledImage(ctx, img, canvasW, canvasH, 1.08, "cover");
 
-  const gradient = ctx.createLinearGradient(0, canvasH * 0.52, 0, canvasH);
+  const gradient = ctx.createLinearGradient(0, canvasH * 0.5, 0, canvasH);
   gradient.addColorStop(0, "rgba(0,0,0,0)");
-  gradient.addColorStop(1, "rgba(0,0,0,0.88)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.92)");
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, canvasH * 0.52, canvasW, canvasH * 0.48);
+  ctx.fillRect(0, canvasH * 0.5, canvasW, canvasH * 0.5);
+
+  drawBrandBadge(ctx);
 
   ctx.fillStyle = "#E63946";
-  ctx.fillRect(0, canvasH - 14, canvasW, 8);
+  ctx.fillRect(0, canvasH - 12, canvasW, 12);
 
   drawThumbnailTitle(ctx, titleText, canvasW, canvasH);
 
   return canvas.toDataURL("image/jpeg", 0.9);
+}
+
+// Small "SUKISHORT" pill in the top-left corner, in the app's red — the
+// same branding treatment a hand-made channel thumbnail would carry.
+function drawBrandBadge(ctx) {
+  const text = "SUKISHORT";
+  ctx.font = '700 24px "Obelix Pro", "Arial Black", system-ui, sans-serif';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  const textW = ctx.measureText(text).width;
+  const x = 20;
+  const y = 20;
+  const padX = 16;
+  const h = 44;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "#E63946";
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(x, y, textW + padX * 2, h, 12);
+  } else {
+    ctx.rect(x, y, textW + padX * 2, h);
+  }
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, x + padX, y + h / 2 + 2);
+  ctx.restore();
 }
 
 function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
@@ -1528,15 +1584,21 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
   lines.forEach((line, i) => {
     const y = startY + i * lineHeight;
 
-    ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+    // Three-pass GFX treatment in the app's palette: black outer rim with
+    // a drop shadow, red mid outline, white fill.
+    ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
     ctx.shadowBlur = 16;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 6;
-    ctx.lineWidth = fontSize * 0.16 + 2;
+    ctx.lineWidth = fontSize * 0.3;
     ctx.strokeStyle = "#000000";
     ctx.strokeText(line, canvasW / 2, y);
 
     ctx.shadowColor = "transparent";
+    ctx.lineWidth = fontSize * 0.14;
+    ctx.strokeStyle = "#E63946";
+    ctx.strokeText(line, canvasW / 2, y);
+
     ctx.fillStyle = "#ffffff";
     ctx.fillText(line, canvasW / 2, y);
   });
@@ -1632,18 +1694,8 @@ function initHistory() {
     historyDetailVideo.removeAttribute("src");
     historyDetailVideo.load();
   });
-  historyCopyDescriptionBtn.addEventListener("click", () =>
-    copyToClipboard(historyDetailDescription.value, historyCopyDescriptionBtn, "Copier la description")
-  );
-  historyCopyTagsBtn.addEventListener("click", () =>
-    copyToClipboard(historyDetailTags.value, historyCopyTagsBtn, "Copier les tags")
-  );
-  historyDetailDescription.addEventListener("click", () =>
-    copyToClipboard(historyDetailDescription.value, historyCopyDescriptionBtn, "Copier la description")
-  );
-  historyDetailTags.addEventListener("click", () =>
-    copyToClipboard(historyDetailTags.value, historyCopyTagsBtn, "Copier les tags")
-  );
+  historyDetailDescription.addEventListener("click", () => copyFromTextarea(historyDetailDescription));
+  historyDetailTags.addEventListener("click", () => copyFromTextarea(historyDetailTags));
 }
 
 function openHistoryDetail(item) {
@@ -1667,6 +1719,14 @@ function openHistoryDetail(item) {
 
   historyDetailDescription.value = item.description || "";
   historyDetailTags.value = item.tags || "";
+
+  // Older history entries stored a plain source-image URL as thumbnail;
+  // both that and the newer generated data-URL miniature display fine.
+  const hasThumbnail = !!item.thumbnail;
+  historyDetailThumbnail.src = item.thumbnail || "";
+  historyDetailThumbnail.hidden = !hasThumbnail;
+  historyDetailThumbnailDownload.href = item.thumbnail || "";
+  historyDetailThumbnailDownload.hidden = !hasThumbnail;
 
   historyDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
