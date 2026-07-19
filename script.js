@@ -751,9 +751,12 @@ async function generateImages() {
 async function fetchAniListImagesClient(query) {
   if (!query) return [];
   try {
+    // Both anime AND manga in a single GraphQL request: an announced,
+    // not-yet-aired adaptation has no anime entry in any database yet, but
+    // the source manga's volume covers and character art are already there.
     const gqlQuery = `
       query ($search: String) {
-        Page(perPage: 4) {
+        anime: Page(perPage: 4) {
           media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
             coverImage { extraLarge large }
             bannerImage
@@ -763,6 +766,15 @@ async function fetchAniListImagesClient(query) {
             streamingEpisodes { thumbnail }
             relations {
               nodes { type coverImage { extraLarge large } bannerImage }
+            }
+          }
+        }
+        manga: Page(perPage: 3) {
+          media(search: $search, type: MANGA, sort: SEARCH_MATCH) {
+            coverImage { extraLarge large }
+            bannerImage
+            characters(sort: ROLE, perPage: 15) {
+              nodes { image { large } }
             }
           }
         }
@@ -776,9 +788,10 @@ async function fetchAniListImagesClient(query) {
     });
     if (!res.ok) return [];
     const data = await res.json();
-    const mediaList = data.data?.Page?.media || [];
+    const animeList = data.data?.anime?.media || [];
+    const mangaList = data.data?.manga?.media || [];
 
-    const urls = mediaList.flatMap((media, i) => [
+    const animeUrls = animeList.flatMap((media, i) => [
       media.coverImage?.extraLarge || media.coverImage?.large,
       media.bannerImage,
       ...(media.characters?.nodes || []).map((n) => n.image?.large),
@@ -792,7 +805,13 @@ async function fetchAniListImagesClient(query) {
         : []),
     ]);
 
-    return [...new Set(urls.filter(Boolean))];
+    const mangaUrls = mangaList.flatMap((media) => [
+      media.coverImage?.extraLarge || media.coverImage?.large,
+      media.bannerImage,
+      ...(media.characters?.nodes || []).map((n) => n.image?.large),
+    ]);
+
+    return [...new Set([...animeUrls, ...mangaUrls].filter(Boolean))];
   } catch {
     return [];
   }

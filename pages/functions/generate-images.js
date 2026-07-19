@@ -28,13 +28,17 @@ export async function onRequestPost({ request }) {
   // leave the app to hunt for pictures themselves. Each source covers the
   // others' gaps (MAL has deep galleries, AniList catches alternate
   // romanizations/very recent releases, Kitsu adds distinct poster art).
-  const [malImages, aniListImages, kitsuImages] = await Promise.all([
+  // Manga variants included because plenty of covered news is about
+  // announced adaptations that aren't in the anime databases yet — the
+  // source manga's volume covers and character art already are.
+  const [malImages, aniListImages, kitsuImages, malMangaImages] = await Promise.all([
     fetchRealShowImages(query),
     fetchAniListImages(query),
     fetchKitsuImages(query),
+    fetchMalMangaImages(query),
   ]);
 
-  let images = interleave([malImages, aniListImages, kitsuImages]).slice(0, MAX_IMAGES);
+  let images = interleave([malImages, aniListImages, kitsuImages, malMangaImages]).slice(0, MAX_IMAGES);
 
   // Still short and the show-specific search may have missed (very obscure
   // entry) — retry the whole prompt text as a broader search.
@@ -56,7 +60,12 @@ export async function onRequestPost({ request }) {
   const payload = { images, source: "web" };
   if (debug) {
     payload.debug = {
-      counts: { mal: malImages.length, aniList: aniListImages.length, kitsu: kitsuImages.length },
+      counts: {
+        mal: malImages.length,
+        aniList: aniListImages.length,
+        kitsu: kitsuImages.length,
+        malManga: malMangaImages.length,
+      },
       errors: sourceErrors,
     };
   }
@@ -125,6 +134,48 @@ async function fetchPictures(malId) {
       .map((p) => p.jpg?.large_image_url || p.jpg?.image_url)
       .filter(Boolean);
   } catch {
+    return [];
+  }
+}
+
+// News is often about a manga whose anime adaptation was just announced —
+// no anime entry exists anywhere yet, but the manga's volume covers and
+// character portraits do.
+async function fetchMalMangaImages(query) {
+  try {
+    const searchRes = await fetch(
+      `https://api.jikan.moe/v4/manga?q=${encodeURIComponent(query)}&limit=2`
+    );
+    if (!searchRes.ok) throw new Error(`Jikan manga HTTP ${searchRes.status}`);
+    const searchData = await searchRes.json();
+    const entries = searchData.data || [];
+    const mainId = entries[0]?.mal_id;
+    if (!mainId) return [];
+
+    const posterUrls = entries.map((e) => e.images?.jpg?.large_image_url).filter(Boolean);
+
+    const [pics, characters] = await Promise.all([
+      fetch(`https://api.jikan.moe/v4/manga/${mainId}/pictures`)
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .catch(() => ({ data: [] })),
+      fetch(`https://api.jikan.moe/v4/manga/${mainId}/characters`)
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .catch(() => ({ data: [] })),
+    ]);
+
+    const picUrls = (pics.data || [])
+      .map((p) => p.jpg?.large_image_url || p.jpg?.image_url)
+      .filter(Boolean);
+    const characterUrls = (characters.data || [])
+      .map((c) => c.character?.images?.jpg?.image_url)
+      .filter(Boolean);
+
+    return [...new Set([...posterUrls, ...shuffle(picUrls), ...shuffle(characterUrls)])].slice(
+      0,
+      MAX_IMAGES
+    );
+  } catch (err) {
+    sourceErrors.malManga = err.message || String(err);
     return [];
   }
 }
@@ -271,6 +322,22 @@ async function fetchKitsuImages(query) {
             .filter(Boolean)
         );
       }
+    }
+
+    // Same not-yet-adapted scenario as the other sources: Kitsu's manga
+    // catalog has the volume covers even when no anime entry exists.
+    const mangaRes = await fetch(
+      `https://kitsu.io/api/edge/manga?filter[text]=${encodeURIComponent(query)}&page[limit]=2`,
+      { headers: { Accept: "application/vnd.api+json" } }
+    );
+    if (mangaRes.ok) {
+      const mangaData = await mangaRes.json();
+      urls.push(
+        ...(mangaData.data || []).flatMap((entry) => [
+          entry.attributes?.posterImage?.original || entry.attributes?.posterImage?.large,
+          entry.attributes?.coverImage?.original || entry.attributes?.coverImage?.large,
+        ])
+      );
     }
 
     return [...new Set(urls.filter(Boolean))];
