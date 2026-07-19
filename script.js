@@ -1261,31 +1261,44 @@ function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
     const timingsMs = hasRealTimings ? wordTimings.startTimes.map((s) => s * 1000) : null;
     log(timingsMs ? "Sous-titres calés sur les vrais timings ElevenLabs (mots exacts de la voix)" : "Sous-titres à espacement égal (pas de timing réel disponible)");
 
-    const startTime = performance.now();
     const bgCache = { img: null, canvas: null };
     let rafId;
 
+    // Subtitles and image cuts are timed on the AudioContext's own clock,
+    // against the exact scheduled start of the narration. performance.now()
+    // runs on a different clock than the audio hardware: it made the words
+    // appear ahead of the voice (audio scheduling latency at the start,
+    // then clock drift over the video's length). audioCtx.currentTime is
+    // the clock the narration is actually rendered on, so words and voice
+    // can't drift apart.
+    const startAt = audioCtx.currentTime + 0.08;
+
     function draw() {
-      const elapsed = performance.now() - startTime;
-      if (elapsed >= durationMs) {
+      const elapsed = (audioCtx.currentTime - startAt) * 1000;
+      // Small tail so MediaRecorder never clips the final word's audio.
+      if (elapsed >= durationMs + 150) {
         cancelAnimationFrame(rafId);
         recorder.stop();
         return;
       }
 
-      const index = Math.min(images.length - 1, Math.floor(elapsed / perImageMs));
-      const segmentElapsed = elapsed - index * perImageMs;
+      const t = Math.min(Math.max(0, elapsed), durationMs);
+      const index = Math.min(images.length - 1, Math.floor(t / perImageMs));
+      const segmentElapsed = t - index * perImageMs;
       const progress = Math.min(1, segmentElapsed / perImageMs);
       const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
 
       drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
-      drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, elapsed, durationMs, timingsMs);
+      // No subtitle during the brief pre-roll before the narration starts.
+      if (elapsed >= 0) {
+        drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, t, durationMs, timingsMs);
+      }
 
       rafId = requestAnimationFrame(draw);
     }
 
     recorder.start();
-    source.start();
+    source.start(startAt);
     draw();
   });
 }
