@@ -27,11 +27,19 @@ export async function onRequestPost({ request }) {
     images = [...new Set([...images, ...promptImages])].slice(0, MAX_IMAGES);
   }
 
+  // MyAnimeList/Jikan doesn't recognize every title (alternate romanizations,
+  // very recent releases, obscure entries) — AniList is a second, independent
+  // anime database that often succeeds where MAL's search comes up empty.
+  if (images.length < MIN_IMAGES) {
+    const aniListImages = await fetchAniListImages(show || prompt);
+    images = [...new Set([...images, ...aniListImages])].slice(0, MAX_IMAGES);
+  }
+
   if (images.length === 0) {
     return json(
       {
         error: "Aucune image trouvée",
-        details: "Impossible de reconnaître la série sur MyAnimeList. Essaie avec un texte qui mentionne clairement le nom exact de l'anime.",
+        details: "Impossible de reconnaître la série. Essaie avec un texte qui mentionne clairement le nom exact de l'anime, ou uploade tes propres images.",
       },
       404
     );
@@ -120,6 +128,46 @@ async function fetchRelatedShowImages(malId) {
       if (images.length >= MIN_IMAGES) break;
     }
     return images;
+  } catch {
+    return [];
+  }
+}
+
+// Independent of MAL/Jikan — AniList has its own search index and often
+// recognizes titles Jikan misses (alternate romanizations, very recent
+// releases). No API key required.
+async function fetchAniListImages(query) {
+  if (!query) return [];
+  try {
+    const gqlQuery = `
+      query ($search: String) {
+        Media(search: $search, type: ANIME) {
+          coverImage { extraLarge large }
+          bannerImage
+          characters(sort: ROLE, perPage: 8) {
+            nodes { image { large } }
+          }
+        }
+      }
+    `;
+
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: gqlQuery, variables: { search: query } }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const media = data.data?.Media;
+    if (!media) return [];
+
+    const urls = [
+      media.coverImage?.extraLarge || media.coverImage?.large,
+      media.bannerImage,
+      ...(media.characters?.nodes || []).map((n) => n.image?.large),
+    ].filter(Boolean);
+
+    return [...new Set(urls)];
   } catch {
     return [];
   }

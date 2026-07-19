@@ -742,6 +742,7 @@ label {
   font-size: 0.9rem;
   line-height: 1.7;
   padding: 16px;
+  cursor: pointer;
 }
 
 .copy-textarea-small {
@@ -1030,10 +1031,15 @@ button:disabled {
   width: 100%;
   max-width: 320px;
   display: block;
-  margin: 0 auto;
+  margin: 0 auto 16px;
   border-radius: 10px;
   aspect-ratio: 9 / 16;
   background: #000;
+}
+
+#history-detail-download {
+  max-width: 320px;
+  margin: 0 auto 20px;
 }
 
 @media (max-width: 480px) {

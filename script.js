@@ -96,6 +96,7 @@ const historyList = document.getElementById("history-list");
 const historyDetail = document.getElementById("history-detail");
 const historyBackBtn = document.getElementById("history-back-btn");
 const historyDetailVideo = document.getElementById("history-detail-video");
+const historyDetailDownload = document.getElementById("history-detail-download");
 const historyDetailTitles = document.getElementById("history-detail-titles");
 const historyDetailDescription = document.getElementById("history-detail-description");
 const historyDetailTags = document.getElementById("history-detail-tags");
@@ -132,6 +133,11 @@ let currentVisualStyle = "";
 let currentShowName = "";
 let currentCharacters = [];
 let currentRealEntities = [];
+// Set right before a suggestion-triggered generation so generateImages()
+// always has at least this one guaranteed-relevant image to fall back on,
+// even if the image search API comes back empty. Cleared as soon as the
+// user manually edits the prompt, so it never leaks into an unrelated video.
+let currentSuggestionImage = "";
 let currentWordTimings = null; // real per-word start times (seconds) from ElevenLabs, when available
 let selectedImages = []; // ordered array of image URLs, order = order in the video
 let defaultTemplate = "";
@@ -255,6 +261,7 @@ function initButtons() {
   regenerateImagesBtn.innerHTML = iconLabel("refresh", "Régénérer");
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
   montageDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
+  historyDetailDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
   copyDescriptionBtn.innerHTML = iconLabel("copy", "Copier la description");
   copyTagsBtn.innerHTML = iconLabel("copy", "Copier les tags");
   articleBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
@@ -454,8 +461,13 @@ resetTemplateBtn.addEventListener("click", () => {
   setTimeout(() => (settingsStatus.textContent = ""), 2000);
 });
 
+promptInput.addEventListener("input", () => {
+  currentSuggestionImage = "";
+});
+
 clearBtn.addEventListener("click", () => {
   promptInput.value = "";
+  currentSuggestionImage = "";
   resultSection.hidden = true;
   audioWrapper.hidden = true;
   audioPlayer.removeAttribute("src");
@@ -616,6 +628,8 @@ montageBtn.addEventListener("click", generateMontage);
 
 copyDescriptionBtn.addEventListener("click", () => copyToClipboard(descriptionOutput.value, copyDescriptionBtn, "Copier la description"));
 copyTagsBtn.addEventListener("click", () => copyToClipboard(tagsOutput.value, copyTagsBtn, "Copier les tags"));
+descriptionOutput.addEventListener("click", () => copyToClipboard(descriptionOutput.value, copyDescriptionBtn, "Copier la description"));
+tagsOutput.addEventListener("click", () => copyToClipboard(tagsOutput.value, copyTagsBtn, "Copier les tags"));
 
 async function copyToClipboard(text, btn, label) {
   try {
@@ -656,6 +670,14 @@ async function generateImages() {
 
     const images = [...new Set(data.images || [])];
 
+    // A video generated from a Suggestion article always has the article's
+    // own image on hand — guarantee it's offered even if the image search
+    // API comes back empty, so a suggestion-driven generation can never
+    // dead-end with zero images.
+    if (currentSuggestionImage && !images.includes(currentSuggestionImage)) {
+      images.unshift(currentSuggestionImage);
+    }
+
     // On the very first batch, pre-select up to 5 images so the user doesn't
     // have to click each one manually.
     if (selectedImages.length === 0) {
@@ -673,9 +695,24 @@ async function generateImages() {
 
     updateConfirmLabel();
     if (!timelineStep.hidden) renderTimeline();
-    status.textContent = "";
+    status.textContent =
+      images.length === 0
+        ? "Aucune image trouvée automatiquement — ajoute les tiennes avec le bouton \"+\"."
+        : "";
   } catch (err) {
-    status.textContent = `Erreur images : ${err.message}`;
+    // Even on a hard API failure, don't strand the user with an empty grid:
+    // offer the suggestion's own image (if any) plus the upload tile so
+    // they can always proceed.
+    imageGrid.innerHTML = "";
+    addUploadTile();
+    if (currentSuggestionImage) {
+      if (selectedImages.length === 0) selectedImages.push(currentSuggestionImage);
+      addImageCard(currentSuggestionImage);
+    }
+    updateConfirmLabel();
+    status.textContent = currentSuggestionImage
+      ? `Recherche d'images indisponible (${err.message}) — l'image de l'actu a été ajoutée, ou uploade les tiennes.`
+      : `Erreur images : ${err.message} — uploade tes propres images avec le bouton "+".`;
   } finally {
     regenerateImagesBtn.disabled = false;
     confirmImagesBtn.disabled = false;
@@ -909,11 +946,14 @@ async function generateMontage() {
     status.textContent = "Génération de la fiche technique...";
     const metadata = await generateMetadata();
 
+    const thumbnailTitle = metadata?.titles?.[0] || currentShowName || currentVoiceScript.slice(0, 40);
+    const thumbnail = generateThumbnail(images[0], thumbnailTitle, montageCanvas.width, montageCanvas.height);
+
     await saveToHistory({
       voiceScript: currentVoiceScript,
       videoBlob: recording.blob,
       videoExt: recording.isMp4 ? "mp4" : "webm",
-      thumbnail: selectedImages[0] || "",
+      thumbnail,
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
       titles: metadata?.titles || [],
       description: metadata?.description || "",
@@ -1213,6 +1253,97 @@ function bounceEaseOut(t) {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
+// A custom, clickbait-style thumbnail generated per video (instead of just
+// reusing a raw source image) — the show's art filled to the edges plus a
+// bold title overlay, so it reads at a glance in the Historique list and
+// entices a click the way a hand-made YouTube Shorts thumbnail would.
+function generateThumbnail(img, titleText, canvasW, canvasH) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasW;
+  canvas.height = canvasH;
+  const ctx = canvas.getContext("2d");
+
+  const blurredBg = getBlurredBackground(img, canvasW, canvasH, {});
+  ctx.drawImage(blurredBg, 0, 0, canvasW, canvasH);
+
+  // Cover-fit and slightly overscaled so the anime's art/character fills
+  // the frame edge-to-edge — a thumbnail needs to read at a glance, unlike
+  // the montage's "contain" letterboxing during playback.
+  drawScaledImage(ctx, img, canvasW, canvasH, 1.08, "cover");
+
+  const gradient = ctx.createLinearGradient(0, canvasH * 0.52, 0, canvasH);
+  gradient.addColorStop(0, "rgba(0,0,0,0)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.88)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, canvasH * 0.52, canvasW, canvasH * 0.48);
+
+  ctx.fillStyle = "#E63946";
+  ctx.fillRect(0, canvasH - 14, canvasW, 8);
+
+  drawThumbnailTitle(ctx, titleText, canvasW, canvasH);
+
+  return canvas.toDataURL("image/jpeg", 0.9);
+}
+
+function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
+  const clean = (text || "").trim().toUpperCase();
+  if (!clean) return;
+
+  const maxWidth = canvasW - 64;
+  let fontSize = 58;
+  let lines = [];
+
+  while (fontSize >= 34) {
+    ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
+    lines = wrapTextLines(ctx, clean, maxWidth);
+    if (lines.length <= 4) break;
+    fontSize -= 4;
+  }
+  lines = lines.slice(0, 4);
+
+  ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
+
+  const lineHeight = fontSize * 1.15;
+  const startY = canvasH - 46 - (lines.length - 1) * lineHeight;
+
+  lines.forEach((line, i) => {
+    const y = startY + i * lineHeight;
+
+    ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 6;
+    ctx.lineWidth = fontSize * 0.16 + 2;
+    ctx.strokeStyle = "#000000";
+    ctx.strokeText(line, canvasW / 2, y);
+
+    ctx.shadowColor = "transparent";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(line, canvasW / 2, y);
+  });
+}
+
+function wrapTextLines(ctx, text, maxWidth) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 // ---------- Historique (IndexedDB) ----------
 
 const HISTORY_DB_NAME = "autoshort-history";
@@ -1292,6 +1423,12 @@ function initHistory() {
   historyCopyTagsBtn.addEventListener("click", () =>
     copyToClipboard(historyDetailTags.value, historyCopyTagsBtn, "Copier les tags")
   );
+  historyDetailDescription.addEventListener("click", () =>
+    copyToClipboard(historyDetailDescription.value, historyCopyDescriptionBtn, "Copier la description")
+  );
+  historyDetailTags.addEventListener("click", () =>
+    copyToClipboard(historyDetailTags.value, historyCopyTagsBtn, "Copier les tags")
+  );
 }
 
 function openHistoryDetail(item) {
@@ -1299,6 +1436,8 @@ function openHistoryDetail(item) {
   historyDetail.hidden = false;
 
   historyDetailVideo.src = URL.createObjectURL(item.videoBlob);
+  historyDetailDownload.href = URL.createObjectURL(item.videoBlob);
+  historyDetailDownload.download = `sukishort.${item.videoExt}`;
 
   historyDetailTitles.innerHTML = "";
   const titles = item.titles && item.titles.length ? item.titles : [item.title || "Sans titre"];
@@ -1397,6 +1536,7 @@ function initSuggestions() {
   articleGenerateBtn.addEventListener("click", () => {
     if (!currentArticle) return;
     document.querySelector('.tab-btn[data-tab="generate"]').click();
+    currentSuggestionImage = currentArticle.image || "";
     promptInput.value = `${currentArticle.title}\n\n${currentArticle.description}`;
     form.requestSubmit();
   });
