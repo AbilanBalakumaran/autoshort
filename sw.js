@@ -1,4 +1,8 @@
-const CACHE_NAME = "autoshort-v1";
+// Bump this version on every deploy that changes any APP_SHELL file: a
+// byte-different sw.js is what makes the browser install the new worker,
+// which (via skipWaiting + controllerchange in script.js) reloads open
+// clients onto the fresh files immediately instead of one launch later.
+const CACHE_NAME = "autoshort-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,7 +15,14 @@ const APP_SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  // cache: "reload" bypasses the HTTP cache so the new worker always
+  // installs with genuinely fresh copies (GitHub Pages serves files with
+  // a 10-minute max-age that could otherwise sneak stale ones back in).
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: "reload" }))))
+  );
   self.skipWaiting();
 });
 
