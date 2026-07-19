@@ -13,7 +13,8 @@ export async function onRequestOptions() {
 let sourceErrors = {};
 
 export async function onRequestPost({ request }) {
-  const { prompt, showName, debug } = await request.json();
+  const { prompt, showName, debug, page: rawPage } = await request.json();
+  const page = Math.max(1, Math.min(10, Number(rawPage) || 1));
   sourceErrors = {};
 
   if (!prompt) {
@@ -32,10 +33,10 @@ export async function onRequestPost({ request }) {
   // announced adaptations that aren't in the anime databases yet — the
   // source manga's volume covers and character art already are.
   const [malImages, aniListImages, kitsuImages, malMangaImages] = await Promise.all([
-    fetchRealShowImages(query),
+    fetchRealShowImages(query, page),
     fetchAniListImages(query),
-    fetchKitsuImages(query),
-    fetchMalMangaImages(query),
+    fetchKitsuImages(query, page),
+    fetchMalMangaImages(query, page),
   ]);
 
   let images = interleave([malImages, aniListImages, kitsuImages, malMangaImages]).slice(0, MAX_IMAGES);
@@ -43,7 +44,7 @@ export async function onRequestPost({ request }) {
   // Still short and the show-specific search may have missed (very obscure
   // entry) — retry the whole prompt text as a broader search.
   if (images.length < MIN_IMAGES && show && prompt !== show) {
-    const promptImages = await fetchRealShowImages(prompt);
+    const promptImages = await fetchRealShowImages(prompt, page);
     images = [...new Set([...images, ...promptImages])].slice(0, MAX_IMAGES);
   }
 
@@ -72,13 +73,14 @@ export async function onRequestPost({ request }) {
   return json(payload);
 }
 
-async function fetchRealShowImages(query) {
+async function fetchRealShowImages(query, page = 1) {
   try {
     // Top 3 matches, not 1: for lesser-known titles the entry's own gallery
     // is often near-empty, but its other seasons/movies rank right behind
-    // it in search and carry the same franchise's art.
+    // it in search and carry the same franchise's art. `page` walks further
+    // down the search results on each regeneration.
     const searchRes = await fetch(
-      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=3`
+      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=3&page=${page}`
     );
     if (!searchRes.ok) throw new Error(`Jikan HTTP ${searchRes.status}`);
     const searchData = await searchRes.json();
@@ -141,10 +143,10 @@ async function fetchPictures(malId) {
 // News is often about a manga whose anime adaptation was just announced —
 // no anime entry exists anywhere yet, but the manga's volume covers and
 // character portraits do.
-async function fetchMalMangaImages(query) {
+async function fetchMalMangaImages(query, page = 1) {
   try {
     const searchRes = await fetch(
-      `https://api.jikan.moe/v4/manga?q=${encodeURIComponent(query)}&limit=2`
+      `https://api.jikan.moe/v4/manga?q=${encodeURIComponent(query)}&limit=2&page=${page}`
     );
     if (!searchRes.ok) throw new Error(`Jikan manga HTTP ${searchRes.status}`);
     const searchData = await searchRes.json();
@@ -290,7 +292,7 @@ async function fetchAniListImages(query) {
 
 // Third independent database — Kitsu's poster/cover art is largely distinct
 // from MAL's and AniList's, so it widens the pool rather than duplicating it.
-async function fetchKitsuImages(query) {
+async function fetchKitsuImages(query, page = 1) {
   if (!query) return [];
   try {
     const res = await fetch(
@@ -307,11 +309,14 @@ async function fetchKitsuImages(query) {
 
     // Episode thumbnails of the best match — every aired episode has its
     // own scene still, which makes this the highest-volume source for
-    // lesser-known shows whose poster galleries are nearly empty.
+    // lesser-known shows whose poster galleries are nearly empty. The
+    // offset slides with `page` (episodes 21-40 on page 2, and so on) so
+    // regenerations keep surfacing new stills of the SAME show instead of
+    // drifting to unrelated search matches.
     const firstId = data.data?.[0]?.id;
     if (firstId) {
       const epRes = await fetch(
-        `https://kitsu.io/api/edge/anime/${firstId}/episodes?page[limit]=20`,
+        `https://kitsu.io/api/edge/anime/${firstId}/episodes?page[limit]=20&page[offset]=${(page - 1) * 20}`,
         { headers: { Accept: "application/vnd.api+json" } }
       );
       if (epRes.ok) {

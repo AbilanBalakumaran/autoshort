@@ -138,6 +138,21 @@ let currentRealEntities = [];
 // even if the image search API comes back empty. Cleared as soon as the
 // user manually edits the prompt, so it never leaks into an unrelated video.
 let currentSuggestionImage = "";
+
+// Every unique image offered so far for the current video — "Régénérer"
+// APPENDS to this pool instead of replacing the grid, guaranteeing at
+// least MIN_NEW_PER_REGEN fresh images per click (as long as the sources
+// have any left). Fetches that return more than the per-click display cap
+// park the overflow in imageReserve, which later regenerations drain
+// before hitting the network again — so a popular show's huge first batch
+// feeds several instant regenerations instead of being thrown away.
+let imagePool = [];
+let imageReserve = [];
+let imageSearchPage = 1;
+const IMAGE_POOL_CAP = 150;
+const MIN_NEW_PER_REGEN = 10;
+const MAX_ADD_FIRST = 40;
+const MAX_ADD_REGEN = 30;
 let currentWordTimings = null; // real per-word start times (seconds) from ElevenLabs, when available
 let selectedImages = []; // ordered array of image URLs, order = order in the video
 let defaultTemplate = "";
@@ -481,6 +496,9 @@ clearBtn.addEventListener("click", () => {
   currentRealEntities = [];
   currentWordTimings = null;
   selectedImages = [];
+  imagePool = [];
+  imageReserve = [];
+  imageSearchPage = 1;
   imageGrid.innerHTML = "";
   timelineStep.hidden = true;
   timelineList.innerHTML = "";
@@ -508,6 +526,9 @@ form.addEventListener("submit", async (e) => {
   montageResult.hidden = true;
   metadataStep.hidden = true;
   selectedImages = [];
+  imagePool = [];
+  imageReserve = [];
+  imageSearchPage = 1;
   currentWordTimings = null;
   imageGrid.innerHTML = "";
   timelineStep.hidden = true;
@@ -600,7 +621,10 @@ function goToImageStep() {
   }
 }
 
-regenerateImagesBtn.addEventListener("click", generateImages);
+regenerateImagesBtn.addEventListener("click", () => {
+  imageSearchPage += 1;
+  generateImages();
+});
 
 uploadInput.addEventListener("change", () => {
   [...uploadInput.files].forEach((file) => {
@@ -653,58 +677,73 @@ async function generateImages() {
   const stylePrompt = currentVisualStyle || currentVoiceScript || promptInput.value;
   const searchQuery =
     currentShowName && currentShowName.toLowerCase() !== "anime" ? currentShowName : stylePrompt;
+  const isRegen = imagePool.length > 0;
 
-  // AniList refuses requests coming from Cloudflare's servers (403) but its
-  // API is CORS-open, so the browser queries it directly here — in parallel
-  // with the backend's MAL/Kitsu search — and the two pools get merged.
-  // This also means AniList keeps supplying images even when the backend or
-  // its sources are down.
-  const aniListPromise = fetchAniListImagesClient(searchQuery);
-
-  let backendImages = [];
-  let backendError = null;
   try {
-    const res = await fetch(`${WORKER_URL}/generate-images`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: stylePrompt,
-        showName: currentShowName,
-      }),
-    });
+    const poolSet = new Set(imagePool);
+    const addCap = isRegen ? MAX_ADD_REGEN : MAX_ADD_FIRST;
+    let added = 0;
+    let lastError = null;
 
-    const data = await res.json();
-    if (!res.ok) {
-      const details = data.details ? ` — ${data.details}` : "";
-      throw new Error((data.error || "Erreur de génération d'images") + details);
+    const drainReserve = () => {
+      while (imageReserve.length > 0 && added < addCap && imagePool.length < IMAGE_POOL_CAP) {
+        const url = imageReserve.shift();
+        if (poolSet.has(url)) continue;
+        poolSet.add(url);
+        imagePool.push(url);
+        added++;
+      }
+    };
+
+    // Leftovers from earlier oversized batches first — instant, and always
+    // on-topic since they came from the same searches.
+    drainReserve();
+
+    if (added < MIN_NEW_PER_REGEN || !isRegen) {
+      // Up to 3 network passes to gather enough fresh images: the requested
+      // page, the page after it, then page 1 again (whose backend galleries
+      // are shuffled server-side, so a re-fetch still surfaces images the
+      // first pass's cap cut off).
+      const pagesToTry = isRegen ? [imageSearchPage, imageSearchPage + 1, 1] : [imageSearchPage];
+      for (let attempt = 0; attempt < pagesToTry.length; attempt++) {
+        const page = pagesToTry[attempt];
+        const { images, backendError } = await fetchImageBatch(stylePrompt, searchQuery, page);
+        if (backendError) lastError = backendError;
+        // Advance the cursor past any extra page this pass consumed, so the
+        // next Régénérer starts on genuinely unexplored ground.
+        if (attempt === 1) imageSearchPage = page;
+
+        for (const url of images) {
+          if (poolSet.has(url)) continue;
+          if (added < addCap && imagePool.length < IMAGE_POOL_CAP) {
+            poolSet.add(url);
+            imagePool.push(url);
+            added++;
+          } else if (!imageReserve.includes(url)) {
+            imageReserve.push(url);
+          }
+        }
+        if (added >= MIN_NEW_PER_REGEN || imagePool.length >= IMAGE_POOL_CAP) break;
+      }
     }
-    backendImages = data.images || [];
-  } catch (err) {
-    backendError = err;
-  }
-
-  const aniListImages = await aniListPromise;
-
-  try {
-    const images = [...new Set([...backendImages, ...aniListImages])].slice(0, 40);
 
     // A video generated from a Suggestion article always has the article's
     // own image on hand — guarantee it's offered even if the image search
-    // API comes back empty, so a suggestion-driven generation can never
+    // APIs come back empty, so a suggestion-driven generation can never
     // dead-end with zero images.
-    if (currentSuggestionImage && !images.includes(currentSuggestionImage)) {
-      images.unshift(currentSuggestionImage);
+    if (currentSuggestionImage && !poolSet.has(currentSuggestionImage)) {
+      imagePool.unshift(currentSuggestionImage);
     }
 
     // Only surface a hard failure if it actually left us with nothing —
     // when AniList (or the suggestion image) filled the grid anyway, the
     // backend hiccup is invisible to the user and should stay that way.
-    if (images.length === 0 && backendError) throw backendError;
+    if (imagePool.length === 0 && lastError) throw lastError;
 
     // On the very first batch, pre-select up to 5 images so the user doesn't
     // have to click each one manually.
     if (selectedImages.length === 0) {
-      selectedImages.push(...images.slice(0, 5));
+      selectedImages.push(...imagePool.slice(0, 5));
     }
 
     imageGrid.innerHTML = "";
@@ -712,16 +751,22 @@ async function generateImages() {
 
     // Keep previously selected images visible so a "Régénérer" click doesn't lose picks.
     selectedImages.forEach((src) => addImageCard(src));
-    images.forEach((src) => {
+    imagePool.forEach((src) => {
       if (!selectedImages.includes(src)) addImageCard(src);
     });
 
     updateConfirmLabel();
     if (!timelineStep.hidden) renderTimeline();
-    status.textContent =
-      images.length === 0
-        ? "Aucune image trouvée automatiquement — ajoute les tiennes avec le bouton \"+\"."
-        : "";
+    if (imagePool.length === 0) {
+      status.textContent = 'Aucune image trouvée automatiquement — ajoute les tiennes avec le bouton "+".';
+    } else if (isRegen) {
+      status.textContent =
+        added > 0
+          ? `${added} nouvelle(s) image(s) ajoutée(s) — ${imagePool.length} au total.`
+          : "Toutes les images disponibles pour cet anime sont déjà affichées.";
+    } else {
+      status.textContent = "";
+    }
   } catch (err) {
     // Even on a hard API failure, don't strand the user with an empty grid:
     // offer the suggestion's own image (if any) plus the upload tile so
@@ -742,25 +787,61 @@ async function generateImages() {
   }
 }
 
+// One combined fetch pass: backend (MAL + Kitsu, which AniList-blocked
+// Cloudflare can't cover) in parallel with the browser's own AniList
+// query. `page` digs deeper into each source's results on regeneration.
+async function fetchImageBatch(stylePrompt, searchQuery, page) {
+  const aniListPromise = fetchAniListImagesClient(searchQuery, page);
+
+  let backendImages = [];
+  let backendError = null;
+  try {
+    const res = await fetch(`${WORKER_URL}/generate-images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: stylePrompt,
+        showName: currentShowName,
+        page,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      const details = data.details ? ` — ${data.details}` : "";
+      throw new Error((data.error || "Erreur de génération d'images") + details);
+    }
+    backendImages = data.images || [];
+  } catch (err) {
+    backendError = err;
+  }
+
+  const aniListImages = await aniListPromise;
+  return { images: [...new Set([...backendImages, ...aniListImages])], backendError };
+}
+
 // Queried straight from the browser because AniList 403s Cloudflare-origin
 // requests — the backend can't do this one for us. Top 4 matches so a
 // franchise's other seasons contribute art too, plus main-cast portraits,
 // per-episode scene stills (Crunchyroll thumbnails) and the best match's
 // related entries — the episode stills especially keep the pool rich even
 // for lesser-known shows whose poster galleries are nearly empty.
-async function fetchAniListImagesClient(query) {
+async function fetchAniListImagesClient(query, page = 1) {
   if (!query) return [];
   try {
     // Both anime AND manga in a single GraphQL request: an announced,
     // not-yet-aired adaptation has no anime entry in any database yet, but
     // the source manga's volume covers and character art are already there.
+    // $page paginates the character lists, and the episode-still window
+    // below slides with it, so each regeneration surfaces a genuinely new
+    // batch instead of re-serving the same art.
     const gqlQuery = `
-      query ($search: String) {
+      query ($search: String, $page: Int) {
         anime: Page(perPage: 4) {
           media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
             coverImage { extraLarge large }
             bannerImage
-            characters(sort: ROLE, perPage: 20) {
+            characters(sort: ROLE, page: $page, perPage: 20) {
               nodes { image { large } }
             }
             streamingEpisodes { thumbnail }
@@ -773,7 +854,7 @@ async function fetchAniListImagesClient(query) {
           media(search: $search, type: MANGA, sort: SEARCH_MATCH) {
             coverImage { extraLarge large }
             bannerImage
-            characters(sort: ROLE, perPage: 15) {
+            characters(sort: ROLE, page: $page, perPage: 15) {
               nodes { image { large } }
             }
           }
@@ -784,7 +865,7 @@ async function fetchAniListImagesClient(query) {
     const res = await fetch("https://graphql.anilist.co", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ query: gqlQuery, variables: { search: query } }),
+      body: JSON.stringify({ query: gqlQuery, variables: { search: query, page } }),
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -795,7 +876,7 @@ async function fetchAniListImagesClient(query) {
       media.coverImage?.extraLarge || media.coverImage?.large,
       media.bannerImage,
       ...(media.characters?.nodes || []).map((n) => n.image?.large),
-      ...(media.streamingEpisodes || []).slice(0, 12).map((ep) => ep.thumbnail),
+      ...(media.streamingEpisodes || []).slice((page - 1) * 12, page * 12).map((ep) => ep.thumbnail),
       // Franchise relations only from the best match — the runner-ups'
       // relations drift too far from the requested show.
       ...(i === 0
@@ -833,6 +914,7 @@ function addImageCard(src) {
   const img = document.createElement("img");
   img.src = src;
   img.alt = "Image proposée";
+  img.loading = "lazy";
 
   const badge = document.createElement("span");
   badge.className = "image-check";
