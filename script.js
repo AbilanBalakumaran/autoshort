@@ -686,7 +686,7 @@ async function generateImages() {
   const aniListImages = await aniListPromise;
 
   try {
-    const images = [...new Set([...backendImages, ...aniListImages])].slice(0, 30);
+    const images = [...new Set([...backendImages, ...aniListImages])].slice(0, 40);
 
     // A video generated from a Suggestion article always has the article's
     // own image on hand — guarantee it's offered even if the image search
@@ -743,19 +743,26 @@ async function generateImages() {
 }
 
 // Queried straight from the browser because AniList 403s Cloudflare-origin
-// requests — the backend can't do this one for us. Top 2 matches so a
-// franchise's other seasons contribute art too, plus main-cast portraits.
+// requests — the backend can't do this one for us. Top 4 matches so a
+// franchise's other seasons contribute art too, plus main-cast portraits,
+// per-episode scene stills (Crunchyroll thumbnails) and the best match's
+// related entries — the episode stills especially keep the pool rich even
+// for lesser-known shows whose poster galleries are nearly empty.
 async function fetchAniListImagesClient(query) {
   if (!query) return [];
   try {
     const gqlQuery = `
       query ($search: String) {
-        Page(perPage: 2) {
+        Page(perPage: 4) {
           media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
             coverImage { extraLarge large }
             bannerImage
-            characters(sort: ROLE, perPage: 12) {
+            characters(sort: ROLE, perPage: 20) {
               nodes { image { large } }
+            }
+            streamingEpisodes { thumbnail }
+            relations {
+              nodes { type coverImage { extraLarge large } bannerImage }
             }
           }
         }
@@ -771,10 +778,18 @@ async function fetchAniListImagesClient(query) {
     const data = await res.json();
     const mediaList = data.data?.Page?.media || [];
 
-    const urls = mediaList.flatMap((media) => [
+    const urls = mediaList.flatMap((media, i) => [
       media.coverImage?.extraLarge || media.coverImage?.large,
       media.bannerImage,
       ...(media.characters?.nodes || []).map((n) => n.image?.large),
+      ...(media.streamingEpisodes || []).slice(0, 12).map((ep) => ep.thumbnail),
+      // Franchise relations only from the best match — the runner-ups'
+      // relations drift too far from the requested show.
+      ...(i === 0
+        ? (media.relations?.nodes || [])
+            .filter((n) => n.type === "ANIME")
+            .flatMap((n) => [n.coverImage?.extraLarge || n.coverImage?.large, n.bannerImage])
+        : []),
     ]);
 
     return [...new Set(urls.filter(Boolean))];

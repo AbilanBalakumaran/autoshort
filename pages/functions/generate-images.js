@@ -1,6 +1,6 @@
 import { json, corsHeaders } from "./_utils.js";
 
-const MAX_IMAGES = 24;
+const MAX_IMAGES = 30;
 const MIN_IMAGES = 8;
 
 export async function onRequestOptions() {
@@ -65,46 +65,82 @@ export async function onRequestPost({ request }) {
 
 async function fetchRealShowImages(query) {
   try {
+    // Top 3 matches, not 1: for lesser-known titles the entry's own gallery
+    // is often near-empty, but its other seasons/movies rank right behind
+    // it in search and carry the same franchise's art.
     const searchRes = await fetch(
-      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`
+      `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=3`
     );
     if (!searchRes.ok) throw new Error(`Jikan HTTP ${searchRes.status}`);
     const searchData = await searchRes.json();
-    const malId = searchData.data?.[0]?.mal_id;
-    const mainImage = searchData.data?.[0]?.images?.jpg?.large_image_url;
-    if (!malId) return [];
+    const entries = searchData.data || [];
+    const mainId = entries[0]?.mal_id;
+    if (!mainId) return [];
 
-    const picsRes = await fetch(`https://api.jikan.moe/v4/anime/${malId}/pictures`);
-    const picsData = picsRes.ok ? await picsRes.json() : { data: [] };
+    const posterUrls = entries.map((e) => e.images?.jpg?.large_image_url).filter(Boolean);
 
-    const galleryUrls = (picsData.data || [])
-      .map((p) => p.jpg?.large_image_url || p.jpg?.image_url)
-      .filter(Boolean)
-      .filter((url) => url !== mainImage);
+    const [mainPics, characterUrls, trailerUrls] = await Promise.all([
+      fetchPictures(mainId),
+      fetchCharacterImages(mainId),
+      fetchTrailerImages(mainId),
+    ]);
 
-    let urls = mainImage ? [mainImage, ...shuffle(galleryUrls)] : shuffle(galleryUrls);
-    urls = [...new Set(urls)];
+    let urls = [
+      ...new Set([
+        posterUrls[0],
+        ...shuffle(mainPics),
+        ...posterUrls.slice(1),
+        ...shuffle(characterUrls),
+        ...trailerUrls,
+      ]),
+    ].filter(Boolean);
 
-    // Lesser-known shows often have very few gallery pictures on MAL. Top up
-    // the pool with real character portraits from the same show so there's
-    // always enough variety for a montage, without falling back to AI images.
-    if (urls.length < MAX_IMAGES) {
-      const characterUrls = await fetchCharacterImages(malId);
-      urls = [...new Set([...urls, ...shuffle(characterUrls)])];
+    // Still short (thin gallery AND thin cast — typical obscure entry):
+    // pull the other search matches' galleries too.
+    if (urls.length < MAX_IMAGES && entries.length > 1) {
+      const otherPics = await Promise.all(entries.slice(1).map((e) => fetchPictures(e.mal_id)));
+      urls = [...new Set([...urls, ...otherPics.flat()])];
     }
 
-    // Still short (very obscure entry, thin gallery and cast) — pull in
-    // pictures from the same franchise's other entries (sequels, movies,
-    // OVAs) so we can still guarantee a real, on-topic minimum instead of
-    // handing back a near-empty selection.
+    // Last resort — the franchise's explicitly related entries (sequels,
+    // movies, OVAs) so we can still guarantee a real, on-topic minimum.
     if (urls.length < MIN_IMAGES) {
-      const relatedUrls = await fetchRelatedShowImages(malId);
+      const relatedUrls = await fetchRelatedShowImages(mainId);
       urls = [...new Set([...urls, ...shuffle(relatedUrls)])];
     }
 
     return urls.slice(0, MAX_IMAGES);
   } catch (err) {
     sourceErrors.mal = err.message || String(err);
+    return [];
+  }
+}
+
+async function fetchPictures(malId) {
+  try {
+    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/pictures`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || [])
+      .map((p) => p.jpg?.large_image_url || p.jpg?.image_url)
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// Promo/trailer thumbnails (YouTube stills) — usually a handful of real
+// scene shots even for shows whose poster gallery is empty.
+async function fetchTrailerImages(malId) {
+  try {
+    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/videos`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data?.promo || [])
+      .map((p) => p.trailer?.images?.maximum_image_url || p.trailer?.images?.large_image_url)
+      .filter(Boolean)
+      .slice(0, 5);
+  } catch {
     return [];
   }
 }
@@ -217,6 +253,25 @@ async function fetchKitsuImages(query) {
       entry.attributes?.posterImage?.original || entry.attributes?.posterImage?.large,
       entry.attributes?.coverImage?.original || entry.attributes?.coverImage?.large,
     ]);
+
+    // Episode thumbnails of the best match — every aired episode has its
+    // own scene still, which makes this the highest-volume source for
+    // lesser-known shows whose poster galleries are nearly empty.
+    const firstId = data.data?.[0]?.id;
+    if (firstId) {
+      const epRes = await fetch(
+        `https://kitsu.io/api/edge/anime/${firstId}/episodes?page[limit]=20`,
+        { headers: { Accept: "application/vnd.api+json" } }
+      );
+      if (epRes.ok) {
+        const epData = await epRes.json();
+        urls.push(
+          ...(epData.data || [])
+            .map((ep) => ep.attributes?.thumbnail?.original)
+            .filter(Boolean)
+        );
+      }
+    }
 
     return [...new Set(urls.filter(Boolean))];
   } catch {
