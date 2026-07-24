@@ -2,6 +2,20 @@ const WORKER_URL = "https://autoshort-2ym.pages.dev";
 const TEMPLATE_STORAGE_KEY = "autoshort-template";
 const DURATION_STORAGE_KEY = "autoshort-duration";
 const VOICE_STORAGE_KEY = "autoshort-voice";
+
+// Publishing (Buffer) — declared up here with the other config because the
+// init* calls near the top of this file run before the publishing section.
+const BUFFER_KEY_STORAGE_KEY = "sukishort-buffer-key";
+const PUBLISH_TIME_STORAGE_KEY = "sukishort-publish-time";
+const PUBLISH_NOW_STORAGE_KEY = "sukishort-publish-now";
+const BOOKED_DAYS_STORAGE_KEY = "sukishort-booked-days";
+const DEFAULT_PUBLISH_TIME = "06:40";
+
+const PLATFORMS = {
+  tiktok: { label: "TikTok", service: "tiktok", maxCaption: 2200 },
+  instagram: { label: "Instagram", service: "instagram", maxCaption: 2200 },
+  youtube: { label: "YouTube", service: "youtube", maxCaption: 5000 },
+};
 const DEFAULT_DURATION = 16;
 const WORDS_PER_SECOND = 35 / 16;
 
@@ -78,6 +92,16 @@ const descriptionOutput = document.getElementById("description-output");
 const tagsOutput = document.getElementById("tags-output");
 const thumbnailPreview = document.getElementById("thumbnail-preview");
 const thumbnailDownload = document.getElementById("thumbnail-download");
+const thumbnailTiktokPreview = document.getElementById("thumbnail-tiktok-preview");
+const thumbnailTiktokDownload = document.getElementById("thumbnail-tiktok-download");
+const publishPanel = document.getElementById("publish-panel");
+const historyPublishPanel = document.getElementById("history-publish-panel");
+const bufferKeyInput = document.getElementById("buffer-key-input");
+const saveBufferKeyBtn = document.getElementById("save-buffer-key-btn");
+const testBufferBtn = document.getElementById("test-buffer-btn");
+const bufferStatus = document.getElementById("buffer-status");
+const publishTimeInput = document.getElementById("publish-time-input");
+const publishNowDefault = document.getElementById("publish-now-default");
 const debugLog = document.getElementById("debug-log");
 
 const suggestionsStatus = document.getElementById("suggestions-status");
@@ -102,6 +126,8 @@ const historyDetailDescription = document.getElementById("history-detail-descrip
 const historyDetailTags = document.getElementById("history-detail-tags");
 const historyDetailThumbnail = document.getElementById("history-detail-thumbnail");
 const historyDetailThumbnailDownload = document.getElementById("history-detail-thumbnail-download");
+const historyDetailThumbnailTiktok = document.getElementById("history-detail-thumbnail-tiktok");
+const historyDetailThumbnailTiktokDownload = document.getElementById("history-detail-thumbnail-tiktok-download");
 
 function log(msg) {
   debugLog.hidden = false;
@@ -160,6 +186,7 @@ let defaultTemplate = "";
 initButtons();
 initTabs();
 initSettings();
+initPublishSettings();
 initSuggestions();
 initHistory();
 initLogo();
@@ -303,6 +330,14 @@ function initTabs() {
   const mainEl = document.querySelector("main");
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
+      // Tapping the tab you're already on acts as "back", the way every
+      // native mobile app behaves: it closes whatever detail view is open
+      // and returns the tab to its list.
+      if (btn.classList.contains("active")) {
+        popTabDetail(btn.dataset.tab);
+        return;
+      }
+
       tabButtons.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       document.querySelectorAll(".tab-panel").forEach((panel) => {
@@ -312,6 +347,24 @@ function initTabs() {
       mainEl.classList.toggle("wide", btn.dataset.tab === "settings" || isImageStepVisible);
     });
   });
+}
+
+// Re-tapping the active tab backs out of its open detail view; if nothing is
+// open, scroll to the top instead (also standard mobile behaviour).
+function popTabDetail(tab) {
+  const backBtn =
+    tab === "suggestions"
+      ? (!articleDetail.hidden && articleBackBtn)
+      : tab === "history"
+        ? (!historyDetail.hidden && historyBackBtn)
+        : null;
+
+  if (backBtn) {
+    backBtn.click();
+    return;
+  }
+  document.querySelector("main").scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function initSettings() {
@@ -1168,22 +1221,45 @@ async function generateMontage() {
 
     const thumbnailTitle = metadata?.titles?.[0] || currentShowName || currentVoiceScript.slice(0, 40);
     const thumbnail = generateThumbnail(images[0], thumbnailTitle, montageCanvas.width, montageCanvas.height);
+    // TikTok's cover picker works from a 1080x1350 frame, so ship a second
+    // render at that exact size rather than letting the app crop the 9:16 one.
+    const thumbnailTikTok = generateThumbnail(
+      images[0], thumbnailTitle, TIKTOK_THUMBNAIL_SIZE.width, TIKTOK_THUMBNAIL_SIZE.height
+    );
 
     thumbnailPreview.src = thumbnail;
     thumbnailPreview.hidden = false;
     thumbnailDownload.href = thumbnail;
     thumbnailDownload.hidden = false;
+    thumbnailTiktokPreview.src = thumbnailTikTok;
+    thumbnailTiktokPreview.hidden = false;
+    thumbnailTiktokDownload.href = thumbnailTikTok;
+    thumbnailTiktokDownload.hidden = false;
 
-    await saveToHistory({
+    const historyId = await saveToHistory({
       voiceScript: currentVoiceScript,
       videoBlob: recording.blob,
       videoExt: recording.isMp4 ? "mp4" : "webm",
       thumbnail,
+      thumbnailTikTok,
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
       titles: metadata?.titles || [],
       description: metadata?.description || "",
       tags: metadata?.tags || "",
     });
+
+    // Feed the publishing panel (platform tabs + Buffer scheduling) with
+    // everything it needs, so the user never has to download and re-upload.
+    openPublishPanel({
+      id: historyId,
+      videoBlob: recording.blob,
+      videoExt: recording.isMp4 ? "mp4" : "webm",
+      thumbnail,
+      thumbnailTikTok,
+      titles: metadata?.titles || [],
+      description: metadata?.description || "",
+      tags: metadata?.tags || "",
+    }, publishPanel);
 
     log("Terminé");
     status.textContent = "";
@@ -1254,13 +1330,203 @@ function loadImage(src) {
   });
 }
 
-// ffmpeg.wasm turned out to be unreliable to load correctly in this hosting
-// setup (CDN cross-origin Worker errors, then UMD/ESM export mismatches even
-// self-hosted) despite several targeted fixes. Reverted to real-time
-// canvas.captureStream() + MediaRecorder, which is proven to work on desktop.
-// Safari (iOS 14.3+/macOS) can record straight to MP4, avoiding the WebM
-// mobile-playback problem entirely for that browser.
-function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
+const MONTAGE_FPS = 30;
+
+// wordTimings.words/startTimes come from the same ElevenLabs alignment data
+// and are paired 1:1 by construction, so they're always trustworthy — unlike
+// re-splitting our own copy of the script, which can drift out of sync with
+// what ElevenLabs actually said (e.g. numbers/dates).
+function prepareSubtitles(subtitleText, wordTimings) {
+  const hasRealTimings =
+    wordTimings?.words?.length && wordTimings.words.length === wordTimings.startTimes.length;
+  const words = hasRealTimings
+    ? wordTimings.words
+    : (subtitleText || "").trim().split(/\s+/).filter(Boolean);
+  const timingsMs = hasRealTimings ? wordTimings.startTimes.map((s) => s * 1000) : null;
+  log(
+    timingsMs
+      ? "Sous-titres calés sur les vrais timings ElevenLabs (mots exacts de la voix)"
+      : "Sous-titres à espacement égal (pas de timing réel disponible)"
+  );
+  return { words, timingsMs };
+}
+
+// Single source of truth for what a frame looks like at time `t`, shared by
+// the deterministic WebCodecs encoder and the real-time fallback recorder.
+function drawMontageFrameAt(ctx, images, t, durationMs, subtitleWords, timingsMs, bgCache, w, h) {
+  const perImageMs = durationMs / images.length;
+  const index = Math.min(images.length - 1, Math.floor(t / perImageMs));
+  const progress = Math.min(1, (t - index * perImageMs) / perImageMs);
+  const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
+
+  drawKenBurnsFrame(ctx, images[index], w, h, progress, zoomIn, bgCache);
+  drawSubtitle(ctx, subtitleWords, w, h, t, durationMs, timingsMs);
+}
+
+async function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
+  // WebCodecs first: it produces a constant-frame-rate H.264/AAC MP4 with the
+  // moov atom at the front. MediaRecorder's output is variable-frame-rate with
+  // trailing metadata, which is exactly what makes Instagram/TikTok's preview
+  // freeze while YouTube (which re-encodes everything) plays it fine.
+  if (webCodecsAvailable()) {
+    try {
+      return await renderMontageWebCodecs(images, audioBuffer, subtitleText, wordTimings);
+    } catch (err) {
+      log(`Encodage compatible indisponible (${err.message}) — repli sur l'enregistrement temps réel`);
+    }
+  } else {
+    log("WebCodecs non supporté par ce navigateur — enregistrement temps réel");
+  }
+  return renderMontageRealtime(images, audioBuffer, subtitleText, wordTimings);
+}
+
+function webCodecsAvailable() {
+  return (
+    typeof VideoEncoder !== "undefined" &&
+    typeof AudioEncoder !== "undefined" &&
+    typeof VideoFrame !== "undefined" &&
+    typeof AudioData !== "undefined" &&
+    typeof Mp4Muxer !== "undefined"
+  );
+}
+
+// Baseline profile first: it's the most widely decodable H.264 flavour, which
+// matters because the file is handed straight to social apps' own players.
+const H264_CODECS = ["avc1.42001f", "avc1.42002a", "avc1.4d001f", "avc1.640020"];
+
+async function pickVideoCodec(width, height) {
+  for (const codec of H264_CODECS) {
+    const config = {
+      codec,
+      width,
+      height,
+      bitrate: 4_000_000,
+      framerate: MONTAGE_FPS,
+      avc: { format: "avc" },
+    };
+    try {
+      const support = await VideoEncoder.isConfigSupported(config);
+      if (support.supported) return config;
+    } catch {
+      // isConfigSupported throws on malformed codec strings — try the next.
+    }
+  }
+  throw new Error("H.264 non supporté");
+}
+
+async function renderMontageWebCodecs(images, audioBuffer, subtitleText, wordTimings) {
+  const width = montageCanvas.width;
+  const height = montageCanvas.height;
+  const ctx = montageCanvas.getContext("2d");
+  const durationMs = audioBuffer.duration * 1000;
+  const { words: subtitleWords, timingsMs } = prepareSubtitles(subtitleText, wordTimings);
+
+  const videoConfig = await pickVideoCodec(width, height);
+  const numberOfChannels = Math.min(2, audioBuffer.numberOfChannels);
+  const audioConfig = {
+    codec: "mp4a.40.2",
+    sampleRate: audioBuffer.sampleRate,
+    numberOfChannels,
+    bitrate: 128_000,
+  };
+  const audioSupport = await AudioEncoder.isConfigSupported(audioConfig);
+  if (!audioSupport.supported) throw new Error("AAC non supporté");
+
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: "avc", width, height },
+    audio: { codec: "aac", sampleRate: audioBuffer.sampleRate, numberOfChannels },
+    // Rewrites the file so the moov atom sits before the media data — the
+    // "faststart" layout every mobile player expects to preview without
+    // downloading the whole file first.
+    fastStart: "in-memory",
+  });
+
+  let encodeError = null;
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (e) => (encodeError = e),
+  });
+  videoEncoder.configure(videoConfig);
+
+  const audioEncoder = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: (e) => (encodeError = e),
+  });
+  audioEncoder.configure(audioConfig);
+
+  log(`Encodage ${videoConfig.codec} + AAC à ${MONTAGE_FPS} i/s (compatible réseaux sociaux)`);
+
+  const totalFrames = Math.max(1, Math.ceil((durationMs / 1000) * MONTAGE_FPS));
+  const frameDurationUs = Math.round(1e6 / MONTAGE_FPS);
+  const bgCache = { img: null, canvas: null };
+
+  for (let i = 0; i < totalFrames; i++) {
+    if (encodeError) throw encodeError;
+    const t = (i / MONTAGE_FPS) * 1000;
+    drawMontageFrameAt(ctx, images, Math.min(t, durationMs), durationMs, subtitleWords, timingsMs, bgCache, width, height);
+
+    const frame = new VideoFrame(montageCanvas, {
+      timestamp: i * frameDurationUs,
+      duration: frameDurationUs,
+    });
+    // A keyframe every second keeps seeking/preview scrubbing responsive.
+    videoEncoder.encode(frame, { keyFrame: i % MONTAGE_FPS === 0 });
+    frame.close();
+
+    if (i % 15 === 0) {
+      status.textContent = `Encodage de la vidéo... ${Math.round((i / totalFrames) * 100)}%`;
+      // Yield so the UI stays responsive and the encoder queue can drain.
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+
+  await encodeAudioTrack(audioEncoder, audioBuffer, numberOfChannels);
+
+  await videoEncoder.flush();
+  await audioEncoder.flush();
+  if (encodeError) throw encodeError;
+  muxer.finalize();
+
+  const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
+  return { blob, isMp4: true };
+}
+
+async function encodeAudioTrack(audioEncoder, audioBuffer, numberOfChannels) {
+  const sampleRate = audioBuffer.sampleRate;
+  const total = audioBuffer.length;
+  const CHUNK = 4096;
+
+  const channels = [];
+  for (let c = 0; c < numberOfChannels; c++) channels.push(audioBuffer.getChannelData(c));
+
+  for (let offset = 0; offset < total; offset += CHUNK) {
+    const n = Math.min(CHUNK, total - offset);
+    // f32-planar wants every channel's samples laid out back to back.
+    const planar = new Float32Array(n * numberOfChannels);
+    for (let c = 0; c < numberOfChannels; c++) {
+      planar.set(channels[c].subarray(offset, offset + n), c * n);
+    }
+
+    const audioData = new AudioData({
+      format: "f32-planar",
+      sampleRate,
+      numberOfFrames: n,
+      numberOfChannels,
+      timestamp: Math.round((offset / sampleRate) * 1e6),
+      data: planar,
+    });
+    audioEncoder.encode(audioData);
+    audioData.close();
+
+    if (audioEncoder.encodeQueueSize > 30) await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+// Fallback for browsers without WebCodecs: real-time canvas.captureStream() +
+// MediaRecorder. Produces a less universally compatible file, but it's better
+// than no video at all.
+function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimings) {
   return new Promise((resolve, reject) => {
     const ctx = montageCanvas.getContext("2d");
     const audioCtx = new AudioContext();
@@ -1308,17 +1574,7 @@ function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
     recorder.onerror = (e) => reject(e.error || new Error("Erreur d'enregistrement"));
 
     const durationMs = audioBuffer.duration * 1000;
-    const perImageMs = durationMs / images.length;
-    // wordTimings.words/startTimes come from the same ElevenLabs alignment
-    // data and are paired 1:1 by construction, so they're always trustworthy
-    // — unlike re-splitting our own copy of the script, which can drift out
-    // of sync with what ElevenLabs actually said (e.g. numbers/dates).
-    const hasRealTimings = wordTimings?.words?.length && wordTimings.words.length === wordTimings.startTimes.length;
-    const subtitleWords = hasRealTimings
-      ? wordTimings.words
-      : (subtitleText || "").trim().split(/\s+/).filter(Boolean);
-    const timingsMs = hasRealTimings ? wordTimings.startTimes.map((s) => s * 1000) : null;
-    log(timingsMs ? "Sous-titres calés sur les vrais timings ElevenLabs (mots exacts de la voix)" : "Sous-titres à espacement égal (pas de timing réel disponible)");
+    const { words: subtitleWords, timingsMs } = prepareSubtitles(subtitleText, wordTimings);
 
     const bgCache = { img: null, canvas: null };
     let rafId;
@@ -1342,16 +1598,10 @@ function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
       }
 
       const t = Math.min(Math.max(0, elapsed), durationMs);
-      const index = Math.min(images.length - 1, Math.floor(t / perImageMs));
-      const segmentElapsed = t - index * perImageMs;
-      const progress = Math.min(1, segmentElapsed / perImageMs);
-      const zoomIn = index % 2 !== 0; // first image always starts on a zoom-out
-
-      drawKenBurnsFrame(ctx, images[index], montageCanvas.width, montageCanvas.height, progress, zoomIn, bgCache);
-      // No subtitle during the brief pre-roll before the narration starts.
-      if (elapsed >= 0) {
-        drawSubtitle(ctx, subtitleWords, montageCanvas.width, montageCanvas.height, t, durationMs, timingsMs);
-      }
+      drawMontageFrameAt(
+        ctx, images, t, durationMs, subtitleWords, timingsMs, bgCache,
+        montageCanvas.width, montageCanvas.height
+      );
 
       rafId = requestAnimationFrame(draw);
     }
@@ -1523,11 +1773,18 @@ function bounceEaseOut(t) {
 // reusing a raw source image) — the show's art filled to the edges plus a
 // bold title overlay, so it reads at a glance in the Historique list and
 // entices a click the way a hand-made YouTube Shorts thumbnail would.
+// Typography is authored against a 540px-wide reference frame and scaled
+// from there, so the same composition holds at any output size (the 9:16
+// video thumbnail and the 1080x1350 TikTok cover).
+const THUMBNAIL_REFERENCE_WIDTH = 540;
+const TIKTOK_THUMBNAIL_SIZE = { width: 1080, height: 1350 };
+
 function generateThumbnail(img, titleText, canvasW, canvasH) {
   const canvas = document.createElement("canvas");
   canvas.width = canvasW;
   canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
+  const s = canvasW / THUMBNAIL_REFERENCE_WIDTH;
 
   const blurredBg = getBlurredBackground(img, canvasW, canvasH, {});
   ctx.drawImage(blurredBg, 0, 0, canvasW, canvasH);
@@ -1543,60 +1800,60 @@ function generateThumbnail(img, titleText, canvasW, canvasH) {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, canvasH * 0.5, canvasW, canvasH * 0.5);
 
-  drawBrandBadge(ctx);
+  drawBrandBadge(ctx, s);
 
   ctx.fillStyle = "#E63946";
-  ctx.fillRect(0, canvasH - 12, canvasW, 12);
+  ctx.fillRect(0, canvasH - 12 * s, canvasW, 12 * s);
 
-  drawThumbnailTitle(ctx, titleText, canvasW, canvasH);
+  drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s);
 
   return canvas.toDataURL("image/jpeg", 0.9);
 }
 
 // Small "SukiAMV" pill in the top-left corner, in the app's red — the
 // same branding treatment a hand-made channel thumbnail would carry.
-function drawBrandBadge(ctx) {
+function drawBrandBadge(ctx, s = 1) {
   const text = "SukiAMV";
-  ctx.font = '700 24px "Obelix Pro", "Arial Black", system-ui, sans-serif';
+  ctx.font = `700 ${24 * s}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   const textW = ctx.measureText(text).width;
-  const x = 20;
-  const y = 20;
-  const padX = 16;
-  const h = 44;
+  const x = 20 * s;
+  const y = 20 * s;
+  const padX = 16 * s;
+  const h = 44 * s;
 
   ctx.save();
   ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 4;
+  ctx.shadowBlur = 10 * s;
+  ctx.shadowOffsetY = 4 * s;
   ctx.fillStyle = "#E63946";
   ctx.beginPath();
   if (ctx.roundRect) {
-    ctx.roundRect(x, y, textW + padX * 2, h, 12);
+    ctx.roundRect(x, y, textW + padX * 2, h, 12 * s);
   } else {
     ctx.rect(x, y, textW + padX * 2, h);
   }
   ctx.fill();
   ctx.shadowColor = "transparent";
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(text, x + padX, y + h / 2 + 2);
+  ctx.fillText(text, x + padX, y + h / 2 + 2 * s);
   ctx.restore();
 }
 
-function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
+function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
   const clean = (text || "").trim().toUpperCase();
   if (!clean) return;
 
-  const maxWidth = canvasW - 64;
-  let fontSize = 58;
+  const maxWidth = canvasW - 64 * s;
+  let fontSize = 58 * s;
   let lines = [];
 
-  while (fontSize >= 34) {
+  while (fontSize >= 34 * s) {
     ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
     lines = wrapTextLines(ctx, clean, maxWidth);
     if (lines.length <= 4) break;
-    fontSize -= 4;
+    fontSize -= 4 * s;
   }
   lines = lines.slice(0, 4);
 
@@ -1610,7 +1867,7 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
   // side, so the line box needs generous spacing — a tighter 1.15 line
   // height made adjacent lines' rims collide and overlap.
   const lineHeight = fontSize * 1.5;
-  const startY = canvasH - 56 - (lines.length - 1) * lineHeight;
+  const startY = canvasH - 56 * s - (lines.length - 1) * lineHeight;
 
   lines.forEach((line, i) => {
     const y = startY + i * lineHeight;
@@ -1618,9 +1875,9 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH) {
     // Three-pass GFX treatment in the app's palette: black outer rim with
     // a drop shadow, red mid outline, white fill.
     ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 12 * s;
     ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 5;
+    ctx.shadowOffsetY = 5 * s;
     ctx.lineWidth = fontSize * 0.22;
     ctx.strokeStyle = "#000000";
     ctx.strokeText(line, canvasW / 2, y);
@@ -1652,6 +1909,332 @@ function wrapTextLines(ctx, text, maxWidth) {
   return lines;
 }
 
+// ---------- Publication (Buffer) ----------
+
+function getBufferKey() {
+  return localStorage.getItem(BUFFER_KEY_STORAGE_KEY) || "";
+}
+
+function getDefaultPublishTime() {
+  return localStorage.getItem(PUBLISH_TIME_STORAGE_KEY) || DEFAULT_PUBLISH_TIME;
+}
+
+function getPublishNowDefault() {
+  return localStorage.getItem(PUBLISH_NOW_STORAGE_KEY) === "true";
+}
+
+function getBookedDays() {
+  try {
+    return JSON.parse(localStorage.getItem(BOOKED_DAYS_STORAGE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function bookDay(dayStr) {
+  const days = new Set(getBookedDays());
+  days.add(dayStr);
+  // Forget anything in the past so the list can't grow forever.
+  const today = parisDayString(new Date());
+  const kept = [...days].filter((d) => d >= today).sort();
+  localStorage.setItem(BOOKED_DAYS_STORAGE_KEY, JSON.stringify(kept));
+}
+
+// Paris is the reference timezone for scheduling regardless of where the
+// device is, so a trip abroad can't silently shift every publication.
+function parisOffsetMinutes(date) {
+  const part = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Paris",
+    timeZoneName: "longOffset",
+  })
+    .formatToParts(date)
+    .find((p) => p.type === "timeZoneName")?.value;
+  const m = /GMT([+-])(\d{2}):(\d{2})/.exec(part || "");
+  if (!m) return 60;
+  return (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+}
+
+function parisParts(date) {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Paris",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(date);
+  const get = (t) => parts.find((p) => p.type === t).value;
+  return { y: get("year"), mo: get("month"), d: get("day"), h: get("hour"), mi: get("minute") };
+}
+
+function parisDayString(date) {
+  const p = parisParts(date);
+  return `${p.y}-${p.mo}-${p.d}`;
+}
+
+// "2026-07-30" + "06:40" understood as Paris wall-clock -> real UTC instant.
+function parisToUtc(dayStr, timeStr) {
+  const [y, mo, d] = dayStr.split("-").map(Number);
+  const [h, mi] = timeStr.split(":").map(Number);
+  const naive = Date.UTC(y, mo - 1, d, h, mi);
+  return new Date(naive - parisOffsetMinutes(new Date(naive)) * 60000);
+}
+
+function toDatetimeLocalValue(date) {
+  const p = parisParts(date);
+  return `${p.y}-${p.mo}-${p.d}T${p.h}:${p.mi}`;
+}
+
+function addDays(dayStr, n) {
+  const [y, mo, d] = dayStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+}
+
+// Next free slot: start today if its publish time hasn't passed yet, then
+// walk forward one day at a time over anything already booked.
+function suggestNextSlot() {
+  const time = getDefaultPublishTime();
+  const booked = new Set(getBookedDays());
+  let day = parisDayString(new Date());
+  if (parisToUtc(day, time).getTime() <= Date.now()) day = addDays(day, 1);
+  let guard = 0;
+  while (booked.has(day) && guard++ < 400) day = addDays(day, 1);
+  return parisToUtc(day, time);
+}
+
+function buildCaption(platform, item) {
+  const description = (item.description || "").trim();
+  const tags = (item.tags || "")
+    .split(/[,\n]/)
+    .map((t) => t.trim().replace(/^#/, ""))
+    .filter(Boolean);
+
+  if (platform === "youtube") {
+    // YouTube keeps tags out of the visible description.
+    return description.slice(0, PLATFORMS.youtube.maxCaption);
+  }
+
+  const hashtags = tags.slice(0, platform === "tiktok" ? 6 : 12).map((t) => `#${t.replace(/\s+/g, "")}`);
+  const text = [description, hashtags.join(" ")].filter(Boolean).join("\n\n");
+  return text.slice(0, PLATFORMS[platform].maxCaption);
+}
+
+// The thumbnail already shows titles[0], so the post headline uses the next
+// suggestion instead — same video, no duplicated wording on screen.
+function buildPostTitle(item) {
+  const titles = item.titles || [];
+  return (titles[1] || titles[0] || item.title || "").trim();
+}
+
+async function bufferGraphql(query, variables) {
+  const apiKey = getBufferKey();
+  if (!apiKey) throw new Error("Aucune clé API Buffer enregistrée (Réglages).");
+
+  const res = await fetch(`${WORKER_URL}/buffer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey, query, variables }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.details ? `${data.error} — ${data.details}` : data.error || "Erreur Buffer");
+  return data.data;
+}
+
+async function fetchBufferChannels() {
+  const account = await bufferGraphql(`query { account { organizations { id name } } }`);
+  const orgId = account?.account?.organizations?.[0]?.id;
+  if (!orgId) throw new Error("Aucune organisation Buffer trouvée pour cette clé.");
+
+  const result = await bufferGraphql(
+    `query ($orgId: OrganizationId!) {
+      channels(input: { organizationId: $orgId }) { id name service }
+    }`,
+    { orgId }
+  );
+  return result?.channels || [];
+}
+
+async function uploadMedia(blobOrDataUrl, contentType) {
+  const blob =
+    typeof blobOrDataUrl === "string" ? await (await fetch(blobOrDataUrl)).blob() : blobOrDataUrl;
+
+  const res = await fetch(`${WORKER_URL}/media`, {
+    method: "POST",
+    headers: { "Content-Type": contentType || blob.type || "application/octet-stream" },
+    body: blob,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.details ? `${data.error} — ${data.details}` : data.error || "Envoi du média échoué");
+  return data.url;
+}
+
+async function schedulePost({ platform, item, title, caption, publishNow, when }) {
+  const channels = await fetchBufferChannels();
+  const service = PLATFORMS[platform].service;
+  const channel = channels.find((c) => (c.service || "").toLowerCase() === service);
+  if (!channel) {
+    throw new Error(
+      `Aucun compte ${PLATFORMS[platform].label} connecté sur Buffer (comptes trouvés : ${
+        channels.map((c) => c.service).join(", ") || "aucun"
+      }).`
+    );
+  }
+
+  const videoUrl = await uploadMedia(item.videoBlob, "video/mp4");
+  const coverSource = platform === "tiktok" && item.thumbnailTikTok ? item.thumbnailTikTok : item.thumbnail;
+  const coverUrl = coverSource ? await uploadMedia(coverSource, "image/jpeg") : null;
+
+  const input = {
+    channelId: channel.id,
+    text: caption,
+    schedulingType: "automatic",
+    mode: publishNow ? "shareNow" : "customScheduled",
+    assets: [
+      {
+        video: {
+          url: videoUrl,
+          ...(coverUrl ? { thumbnailUrl: coverUrl } : {}),
+          metadata: { title },
+        },
+      },
+    ],
+  };
+  if (!publishNow) input.dueAt = when.toISOString();
+
+  const result = await bufferGraphql(
+    `mutation ($input: CreatePostInput!) {
+      createPost(input: $input) {
+        ... on PostActionSuccess { post { id dueAt } }
+        ... on MutationError { message }
+      }
+    }`,
+    { input }
+  );
+
+  const payload = result?.createPost;
+  if (payload?.message) throw new Error(payload.message);
+  if (!payload?.post?.id) throw new Error("Buffer n'a pas confirmé la création du post.");
+  return payload.post;
+}
+
+function openPublishPanel(item, host) {
+  if (!host) return;
+  host.innerHTML = "";
+  const node = document.getElementById("publish-template").content.cloneNode(true);
+  const panel = node.querySelector(".publish-panel");
+
+  const titleInput = panel.querySelector(".publish-title");
+  const captionInput = panel.querySelector(".publish-caption");
+  const cover = panel.querySelector(".publish-cover");
+  const nowToggle = panel.querySelector(".publish-now");
+  const scheduleWrap = panel.querySelector(".publish-schedule");
+  const dateInput = panel.querySelector(".publish-date");
+  const publishBtn = panel.querySelector(".publish-btn");
+  const statusEl = panel.querySelector(".publish-status");
+  const tabs = [...panel.querySelectorAll(".platform-tab")];
+
+  let platform = "tiktok";
+  let loadedOnce = false;
+  // Per-platform edits are kept so switching tabs back and forth doesn't
+  // wipe what the user just typed.
+  const drafts = {};
+
+  function loadPlatform(next) {
+    // Skipped on the very first call: the inputs are still empty then, and
+    // storing that as a draft would blank out the pre-filled values.
+    if (loadedOnce) drafts[platform] = { title: titleInput.value, caption: captionInput.value };
+    loadedOnce = true;
+    platform = next;
+    tabs.forEach((t) => t.classList.toggle("active", t.dataset.platform === platform));
+    const draft = drafts[platform];
+    titleInput.value = draft ? draft.title : buildPostTitle(item);
+    captionInput.value = draft ? draft.caption : buildCaption(platform, item);
+    const coverSrc = platform === "tiktok" && item.thumbnailTikTok ? item.thumbnailTikTok : item.thumbnail;
+    cover.src = coverSrc || "";
+    cover.hidden = !coverSrc;
+  }
+
+  tabs.forEach((t) => t.addEventListener("click", () => loadPlatform(t.dataset.platform)));
+
+  nowToggle.checked = getPublishNowDefault();
+  scheduleWrap.hidden = nowToggle.checked;
+  nowToggle.addEventListener("change", () => {
+    scheduleWrap.hidden = nowToggle.checked;
+    publishBtn.innerHTML = iconLabel("film", nowToggle.checked ? "Publier maintenant" : "Programmer sur Buffer");
+  });
+
+  dateInput.value = toDatetimeLocalValue(suggestNextSlot());
+  publishBtn.innerHTML = iconLabel("film", nowToggle.checked ? "Publier maintenant" : "Programmer sur Buffer");
+  loadPlatform("tiktok");
+
+  publishBtn.addEventListener("click", async () => {
+    if (!getBufferKey()) {
+      statusEl.textContent = "Ajoute d'abord ta clé API Buffer dans les Réglages.";
+      return;
+    }
+    publishBtn.disabled = true;
+    const publishNow = nowToggle.checked;
+    const [dayStr, timeStr] = (dateInput.value || "").split("T");
+    const when = publishNow ? new Date() : parisToUtc(dayStr, timeStr || getDefaultPublishTime());
+
+    statusEl.textContent = publishNow
+      ? `Publication sur ${PLATFORMS[platform].label}...`
+      : `Programmation sur ${PLATFORMS[platform].label}...`;
+
+    try {
+      const post = await schedulePost({
+        platform, item,
+        title: titleInput.value.trim(),
+        caption: captionInput.value.trim(),
+        publishNow, when,
+      });
+      if (!publishNow) bookDay(dayStr);
+      statusEl.textContent = publishNow
+        ? `Publié sur ${PLATFORMS[platform].label} ✓`
+        : `Programmé sur ${PLATFORMS[platform].label} pour le ${new Date(post.dueAt || when).toLocaleString("fr-FR")} ✓`;
+    } catch (err) {
+      statusEl.textContent = `Échec : ${err.message}`;
+    } finally {
+      publishBtn.disabled = false;
+    }
+  });
+
+  host.appendChild(node);
+}
+
+function initPublishSettings() {
+  bufferKeyInput.value = getBufferKey();
+  publishTimeInput.value = getDefaultPublishTime();
+  publishNowDefault.checked = getPublishNowDefault();
+
+  saveBufferKeyBtn.addEventListener("click", () => {
+    const key = bufferKeyInput.value.trim();
+    if (key) localStorage.setItem(BUFFER_KEY_STORAGE_KEY, key);
+    else localStorage.removeItem(BUFFER_KEY_STORAGE_KEY);
+    bufferStatus.textContent = key ? "Clé Buffer enregistrée." : "Clé Buffer supprimée.";
+  });
+
+  testBufferBtn.addEventListener("click", async () => {
+    testBufferBtn.disabled = true;
+    bufferStatus.textContent = "Connexion à Buffer...";
+    try {
+      const channels = await fetchBufferChannels();
+      bufferStatus.textContent = channels.length
+        ? `Connecté ✓ — comptes : ${channels.map((c) => c.service).join(", ")}`
+        : "Connecté, mais aucun compte social n'est relié à ton Buffer.";
+    } catch (err) {
+      bufferStatus.textContent = `Échec : ${err.message}`;
+    } finally {
+      testBufferBtn.disabled = false;
+    }
+  });
+
+  publishTimeInput.addEventListener("change", () => {
+    localStorage.setItem(PUBLISH_TIME_STORAGE_KEY, publishTimeInput.value || DEFAULT_PUBLISH_TIME);
+  });
+  publishNowDefault.addEventListener("change", () => {
+    localStorage.setItem(PUBLISH_NOW_STORAGE_KEY, String(publishNowDefault.checked));
+  });
+}
+
 // ---------- Historique (IndexedDB) ----------
 
 const HISTORY_DB_NAME = "autoshort-history";
@@ -1671,11 +2254,11 @@ function openHistoryDb() {
   });
 }
 
-async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title, titles, description, tags }) {
+async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thumbnailTikTok, title, titles, description, tags }) {
   try {
     const db = await openHistoryDb();
     const tx = db.transaction(HISTORY_STORE, "readwrite");
-    tx.objectStore(HISTORY_STORE).add({
+    const req = tx.objectStore(HISTORY_STORE).add({
       title,
       titles: titles || [],
       description: description || "",
@@ -1684,15 +2267,18 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, titl
       videoBlob,
       videoExt,
       thumbnail,
+      thumbnailTikTok: thumbnailTikTok || "",
       date: Date.now(),
     });
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
+    const id = await new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve(req.result);
       tx.onerror = () => reject(tx.error);
     });
     if (!document.getElementById("tab-history").hidden) renderHistory();
+    return id;
   } catch (err) {
     log(`Historique non sauvegardé : ${err.message || err}`);
+    return null;
   }
 }
 
@@ -1758,6 +2344,17 @@ function openHistoryDetail(item) {
   historyDetailThumbnail.hidden = !hasThumbnail;
   historyDetailThumbnailDownload.href = item.thumbnail || "";
   historyDetailThumbnailDownload.hidden = !hasThumbnail;
+
+  // Only entries generated since the TikTok cover was added carry one.
+  const hasTikTok = !!item.thumbnailTikTok;
+  historyDetailThumbnailTiktok.src = item.thumbnailTikTok || "";
+  historyDetailThumbnailTiktok.hidden = !hasTikTok;
+  historyDetailThumbnailTiktokDownload.href = item.thumbnailTikTok || "";
+  historyDetailThumbnailTiktokDownload.hidden = !hasTikTok;
+
+  // Same publishing panel as right after generation, so an old project can
+  // be scheduled without re-downloading and re-uploading anything.
+  openPublishPanel(item, historyPublishPanel);
 
   historyDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }

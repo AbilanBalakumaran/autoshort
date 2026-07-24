@@ -131,10 +131,16 @@
             <textarea id="tags-output" class="copy-textarea copy-textarea-small" readonly></textarea>
           </div>
 
-          <label>Miniature YouTube</label>
+          <label>Miniature YouTube / Shorts (9:16)</label>
           <img id="thumbnail-preview" class="thumbnail-preview" alt="" hidden />
           <a id="thumbnail-download" class="download-link icon-btn" download="sukishort-miniature.jpg" hidden></a>
+
+          <label>Miniature TikTok (1080 × 1350)</label>
+          <img id="thumbnail-tiktok-preview" class="thumbnail-preview thumbnail-preview-tiktok" alt="" hidden />
+          <a id="thumbnail-tiktok-download" class="download-link icon-btn" download="sukishort-miniature-tiktok.jpg" hidden></a>
         </section>
+
+        <div id="publish-panel" class="publish-host"></div>
       </section>
     </section>
 
@@ -180,13 +186,36 @@
           <textarea id="history-detail-tags" class="copy-textarea copy-textarea-small" readonly></textarea>
         </div>
 
-        <label>Miniature</label>
+        <label>Miniature YouTube / Shorts (9:16)</label>
         <img id="history-detail-thumbnail" class="thumbnail-preview" alt="" hidden />
         <a id="history-detail-thumbnail-download" class="download-link icon-btn" download="sukishort-miniature.jpg" hidden></a>
+
+        <label>Miniature TikTok (1080 × 1350)</label>
+        <img id="history-detail-thumbnail-tiktok" class="thumbnail-preview thumbnail-preview-tiktok" alt="" hidden />
+        <a id="history-detail-thumbnail-tiktok-download" class="download-link icon-btn" download="sukishort-miniature-tiktok.jpg" hidden></a>
+
+        <div id="history-publish-panel" class="publish-host"></div>
       </section>
     </section>
 
     <section id="tab-settings" class="tab-panel" hidden>
+      <label>Publication (Buffer)</label>
+      <p class="hint">Colle ta clé API personnelle Buffer (Buffer → Settings → API) pour programmer directement depuis l'app.</p>
+      <input type="password" id="buffer-key-input" placeholder="Clé API Buffer" autocomplete="off" />
+      <div class="button-row">
+        <button type="button" id="save-buffer-key-btn">Enregistrer la clé</button>
+        <button type="button" id="test-buffer-btn">Tester la connexion</button>
+      </div>
+      <p id="buffer-status" class="hint"></p>
+
+      <label for="publish-time-input">Heure de publication par défaut (heure française)</label>
+      <input type="time" id="publish-time-input" value="06:40" />
+
+      <label class="publish-toggle">
+        <input type="checkbox" id="publish-now-default" />
+        <span>Publier immédiatement par défaut (sinon programmé)</span>
+      </label>
+
       <label>Notifications</label>
       <p class="hint">Reçois une notification dès qu'une nouvelle actu anime/manga est publiée.</p>
       <button type="button" id="notifications-btn" class="icon-btn"></button>
@@ -211,6 +240,42 @@
   </main>
   </div>
 
+  <template id="publish-template">
+    <section class="publish-panel">
+      <h3>Publier</h3>
+      <p class="hint publish-intro">Programme la publication sans télécharger la vidéo. La couverture générée est utilisée automatiquement.</p>
+
+      <div class="platform-tabs">
+        <button type="button" class="platform-tab active" data-platform="tiktok">TikTok</button>
+        <button type="button" class="platform-tab" data-platform="instagram">Instagram</button>
+        <button type="button" class="platform-tab" data-platform="youtube">YouTube</button>
+      </div>
+
+      <label>Titre <span class="copy-hint">(différent de la miniature)</span></label>
+      <input type="text" class="publish-title" />
+
+      <label>Légende</label>
+      <textarea class="publish-caption"></textarea>
+
+      <label>Image de couverture</label>
+      <img class="publish-cover thumbnail-preview" alt="" />
+
+      <label class="publish-toggle">
+        <input type="checkbox" class="publish-now" />
+        <span>Publier immédiatement (sinon programmé)</span>
+      </label>
+
+      <div class="publish-schedule">
+        <label>Date et heure de publication</label>
+        <input type="datetime-local" class="publish-date" />
+      </div>
+
+      <button type="button" class="publish-btn icon-btn"></button>
+      <p class="publish-status hint"></p>
+    </section>
+  </template>
+
+  <script src="vendor/mp4-muxer.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

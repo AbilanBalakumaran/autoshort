@@ -763,6 +763,93 @@ label {
   font-weight: 400;
 }
 
+.publish-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.publish-intro {
+  margin-bottom: 16px;
+}
+
+.platform-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.platform-tab {
+  flex: 1;
+  padding: 11px 8px;
+  background: #1c1c1c;
+  border: 1px solid #2f2f2f;
+  border-radius: 10px;
+  color: #aaa;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.platform-tab.active {
+  background: linear-gradient(135deg, #E63946, #C1121F);
+  border-color: #C1121F;
+  color: #fff;
+}
+
+.publish-title,
+.publish-caption {
+  width: 100%;
+}
+
+.publish-caption {
+  min-height: 150px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  padding: 14px;
+}
+
+.publish-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  font-weight: 400;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.publish-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #E63946;
+  margin: 0;
+  flex: none;
+}
+
+.publish-date {
+  width: 100%;
+  color-scheme: dark;
+}
+
+.publish-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.publish-status {
+  margin-top: 10px;
+  min-height: 1.2em;
+}
+
+.publish-cover {
+  max-width: 220px;
+}
+
+.thumbnail-preview-tiktok {
+  aspect-ratio: 1080 / 1350;
+}
+
 .thumbnail-preview {
   width: 100%;
   max-width: 320px;

@@ -2,12 +2,13 @@
 // byte-different sw.js is what makes the browser install the new worker,
 // which (via skipWaiting + controllerchange in script.js) reloads open
 // clients onto the fresh files immediately instead of one launch later.
-const CACHE_NAME = "autoshort-v4";
+const CACHE_NAME = "autoshort-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./style.css",
   "./script.js",
+  "./vendor/mp4-muxer.js",
   "./icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
