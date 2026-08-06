@@ -1,7 +1,299 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="UTF-8"><title>autoshort API</title></head>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sukishort</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sukishort">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1290-2796.png" media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1179-2556.png" media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1284-2778.png" media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1170-2532.png" media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1242-2688.png" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-828-1792.png" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1125-2436.png" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-1242-2208.png" media="screen and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-750-1334.png" media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="splash/apple-splash-640-1136.png" media="screen and (device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+</head>
 <body>
-  <p>API backend for autoshort. See /generate-prompt and /generate-audio.</p>
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <div class="sidebar-brand">
+        <img src="icon.svg" alt="" />
+        <span>SUKISHORT</span>
+      </div>
+      <button type="button" class="tab-btn active" data-tab="generate">
+        <span class="icon"></span>
+        <span class="tab-label">Accueil</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="suggestions">
+        <span class="icon"></span>
+        <span class="tab-label">Suggestions</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="history">
+        <span class="icon"></span>
+        <span class="tab-label">Historique</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="settings">
+        <span class="icon"></span>
+        <span class="tab-label">Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="app-shell">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <button type="button" id="app-logo" class="app-logo" aria-label="Accueil">
+        <img src="icon.svg" alt="" />
+      </button>
+      <span class="app-title">SUKISHORT</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="tab-generate" class="tab-panel">
+      <p>Colle une actu anime/manga → reçois un prompt vidéo prêt à l'emploi.</p>
+
+      <form id="prompt-form">
+        <textarea id="prompt" placeholder="Colle ici le texte de l'actu (ex: annonce, réaction, news manga...)" required></textarea>
+        <div class="button-row">
+          <button type="submit">Générer le script</button>
+          <button type="button" id="clear-btn">Vider</button>
+        </div>
+      </form>
+
+      <section id="result" hidden>
+        <h2>Script vocal généré</h2>
+        <pre id="script-output"></pre>
+        <p id="duration-estimate"></p>
+        <button type="button" id="generate-audio-btn" class="icon-btn"></button>
+        <div id="audio-wrapper" hidden>
+          <span class="audio-label">Narration</span>
+          <audio id="audio-player" controls></audio>
+          <button type="button" id="continue-to-images-btn" class="icon-btn"></button>
+        </div>
+      </section>
+
+      <p id="status"></p>
+
+      <section id="image-step" hidden>
+        <h2>Choisis les images pour le montage</h2>
+        <p class="hint">Sélectionne une ou plusieurs images proposées. Clique la tuile "+" pour en ajouter depuis ta galerie.</p>
+
+        <input type="file" id="upload-input" accept="image/*" multiple hidden />
+
+        <div id="image-grid" class="image-grid"></div>
+        <div class="button-row">
+          <button type="button" id="regenerate-images-btn" class="icon-btn"></button>
+          <button type="button" id="confirm-images-btn"></button>
+        </div>
+
+        <section id="timeline-step" hidden>
+          <h3>Ordre des images</h3>
+          <p class="hint">Fais glisser une image par sa poignée pour la réordonner, remplace-la ou retire-la — et vois quel passage du texte lui correspond.</p>
+          <div id="timeline-list" class="timeline-list"></div>
+        </section>
+
+        <button type="button" id="montage-btn" class="icon-btn" hidden></button>
+
+        <pre id="debug-log" hidden></pre>
+
+        <canvas id="montage-canvas" width="540" height="960" hidden></canvas>
+
+        <div id="montage-result" hidden>
+          <video id="montage-preview" controls playsinline></video>
+          <a id="montage-download" class="download-link icon-btn" download="sukishort.mp4"></a>
+        </div>
+
+        <div id="publish-panel" class="publish-host"></div>
+      </section>
+    </section>
+
+    <section id="tab-suggestions" class="tab-panel" hidden>
+      <p>Dernières actus anime/manga — clique un article pour le lire, puis génère un short en un clic.</p>
+      <button type="button" id="refresh-suggestions-btn" class="icon-btn"></button>
+      <p id="suggestions-status" class="hint"></p>
+      <div id="suggestions-list"></div>
+
+      <section id="article-detail" hidden>
+        <button type="button" id="article-back-btn" class="icon-btn"></button>
+        <h2 id="article-title"></h2>
+        <img id="article-image" hidden />
+        <div id="article-content"></div>
+        <a id="article-source-link" target="_blank" rel="noopener noreferrer"></a>
+        <button type="button" id="article-generate-btn" class="icon-btn"></button>
+      </section>
+    </section>
+
+    <section id="tab-history" class="tab-panel" hidden>
+      <p>Tes générations précédentes, gardées dans ce navigateur (pas besoin de tout stocker sur ton téléphone).</p>
+      <p id="history-status" class="hint"></p>
+      <div id="history-list" class="history-list"></div>
+
+      <section id="history-detail" hidden>
+        <button type="button" id="history-back-btn" class="icon-btn"></button>
+
+        <video id="history-detail-video" class="history-detail-video" controls playsinline></video>
+        <a id="history-detail-download" class="download-link icon-btn" download></a>
+
+        <div id="history-publish-panel" class="publish-host"></div>
+      </section>
+    </section>
+
+    <section id="tab-settings" class="tab-panel" hidden>
+      <div id="settings-menu" class="settings-menu">
+        <button type="button" class="settings-entry" data-section="publishing">
+          <span class="settings-entry-text">
+            <strong>Publication</strong>
+            <span>Buffer, heure et mode de publication par défaut</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+        <button type="button" class="settings-entry" data-section="voice">
+          <span class="settings-entry-text">
+            <strong>Voix &amp; audio</strong>
+            <span>Voix de narration et durée par défaut</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+        <button type="button" class="settings-entry" data-section="notifications">
+          <span class="settings-entry-text">
+            <strong>Notifications</strong>
+            <span>Alertes quand une nouvelle actu sort</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+        <button type="button" class="settings-entry" data-section="template">
+          <span class="settings-entry-text">
+            <strong>Template du script</strong>
+            <span>Personnalise la consigne d'écriture</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+      </div>
+
+      <section class="settings-section" data-section="publishing" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Publication</h3>
+
+        <label for="buffer-key-input">Clé API Buffer</label>
+        <p class="hint">Buffer → Settings → API → crée une clé personnelle, puis colle-la ici.</p>
+        <input type="password" id="buffer-key-input" class="field-lg" placeholder="Colle ta clé Buffer ici" autocomplete="off" />
+        <div class="button-row">
+          <button type="button" id="save-buffer-key-btn">Enregistrer la clé</button>
+          <button type="button" id="test-buffer-btn">Tester la connexion</button>
+        </div>
+        <p id="buffer-status" class="hint"></p>
+
+        <label for="publish-time-input">Heure de publication par défaut (heure française)</label>
+        <input type="time" id="publish-time-input" class="field-lg" value="06:40" />
+
+        <label class="publish-toggle">
+          <input type="checkbox" id="publish-now-default" />
+          <span>Publier immédiatement par défaut (sinon programmé)</span>
+        </label>
+      </section>
+
+      <section class="settings-section" data-section="voice" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Voix &amp; audio</h3>
+
+        <label for="duration-input">Durée par défaut de l'audio (secondes)</label>
+        <input type="number" id="duration-input" class="field-lg" min="4" max="60" step="1" value="16" />
+
+        <label>Voix de narration</label>
+        <div id="voice-list" class="voice-list"></div>
+        <audio id="voice-preview" hidden></audio>
+      </section>
+
+      <section class="settings-section" data-section="notifications" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Notifications</h3>
+        <p class="hint">Reçois une notification dès qu'une nouvelle actu anime/manga est publiée.</p>
+        <button type="button" id="notifications-btn" class="icon-btn"></button>
+        <p id="notifications-status" class="hint"></p>
+      </section>
+
+      <section class="settings-section" data-section="template" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Template du script</h3>
+        <p class="hint">Personnalise la consigne envoyée à l'IA pour écrire le script vocal.</p>
+        <textarea id="template-input" class="template-textarea"></textarea>
+        <div class="button-row">
+          <button type="button" id="save-template-btn">Enregistrer</button>
+          <button type="button" id="reset-template-btn">Réinitialiser</button>
+        </div>
+      </section>
+
+      <p id="settings-status"></p>
+    </section>
+  </main>
+  </div>
+
+  <template id="publish-template">
+    <section class="publish-panel">
+      <h3>Publier</h3>
+      <p class="hint publish-intro">Programme la publication sans télécharger la vidéo. La couverture générée est utilisée automatiquement.</p>
+
+      <div class="platform-tabs">
+        <button type="button" class="platform-tab active" data-platform="tiktok">TikTok</button>
+        <button type="button" class="platform-tab" data-platform="instagram">Instagram</button>
+        <button type="button" class="platform-tab" data-platform="youtube">YouTube</button>
+      </div>
+
+      <label>Titre <span class="copy-hint">(différent de la miniature)</span></label>
+      <input type="text" class="publish-title" />
+
+      <label>Légende</label>
+      <textarea class="publish-caption"></textarea>
+
+      <label>Image de couverture <span class="copy-hint">(générée automatiquement)</span></label>
+      <img class="publish-cover thumbnail-preview" alt="" />
+      <a class="publish-cover-download download-link icon-btn" download="sukiamv-miniature.jpg"></a>
+
+      <div class="seo-block">
+        <h4>Fiche SEO <span class="copy-hint">(clique un champ pour le copier)</span></h4>
+        <label>Titres suggérés</label>
+        <div class="publish-titles titles-list"></div>
+
+        <label>Description</label>
+        <div class="copy-row">
+          <textarea class="publish-seo-description copy-textarea" readonly></textarea>
+        </div>
+
+        <label>Tags</label>
+        <div class="copy-row">
+          <textarea class="publish-seo-tags copy-textarea copy-textarea-small" readonly></textarea>
+        </div>
+      </div>
+
+      <label class="publish-toggle">
+        <input type="checkbox" class="publish-now" />
+        <span>Publier immédiatement (sinon programmé)</span>
+      </label>
+
+      <div class="publish-schedule">
+        <label>Date et heure de publication</label>
+        <input type="datetime-local" class="publish-date" />
+      </div>
+
+      <button type="button" class="publish-btn icon-btn"></button>
+      <p class="publish-status hint"></p>
+    </section>
+  </template>
+
+  <script src="vendor/mp4-muxer.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

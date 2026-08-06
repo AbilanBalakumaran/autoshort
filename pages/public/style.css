@@ -1,0 +1,1300 @@
+@font-face {
+  font-family: "Obelix Pro";
+  src: url("fonts/ObelixProB-cyr.ttf") format("truetype");
+  font-weight: 700;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Author rules like `.icon-btn { display: flex }` otherwise silently beat the
+   browser's built-in `[hidden] { display: none }` rule, so anything with a
+   class-based display value would stay visible even with hidden=true. */
+[hidden] {
+  display: none !important;
+}
+
+/* Scrollbars matching the app's dark/red theme instead of the browser
+   default. Firefox uses scrollbar-width/-color; everything else (Chrome,
+   Edge, Safari) uses the ::-webkit-scrollbar pseudo-elements. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #E63946 #161616;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #161616;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #E63946, #C1121F);
+  border-radius: 6px;
+  border: 2px solid #161616;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ff4d5e;
+}
+
+::-webkit-scrollbar-corner {
+  background: #161616;
+}
+
+:root {
+  --header-h: 50px;
+  --nav-h: 40px;
+}
+
+html {
+  height: 100%;
+}
+
+/* A column flex layout with only `main` scrolling internally, instead of
+   `position: fixed` header/nav over a scrolling body — the latter visibly
+   shifts on iOS Safari because the fixed elements are anchored to the
+   layout viewport, and the address bar's dynamic show/hide (which depends
+   on whether the page content is tall enough to scroll) changes how that
+   lines up with what's actually visible, making the bars appear to jump
+   between tabs with short vs. long content. */
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #0a0a0a;
+  color: #f0f0f5;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+  transition: max-width 0.2s ease;
+}
+
+main.wide {
+  max-width: 900px;
+}
+
+.app-header {
+  flex: none;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: #0a0a0a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.app-header-inner {
+  max-width: 480px;
+  height: var(--header-h);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+}
+
+.app-title {
+  font-family: "Obelix Pro", "Arial Black", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: 0.06em;
+  color: #f5f5f5;
+}
+
+.app-logo {
+  display: block;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+
+.app-logo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.bottom-nav {
+  order: 1;
+  flex: none;
+  /* Capped to the icon size (24px) instead of the full safe-area inset
+     (~34px on iPhones with a home indicator) — the full value left too
+     much empty space below the bar relative to the app's content area. */
+  padding-bottom: min(env(safe-area-inset-bottom, 0px), 24px);
+  background: #0a0a0a;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bottom-nav-inner {
+  max-width: 480px;
+  height: var(--nav-h);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+}
+
+.tab-btn {
+  flex: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 16px;
+  background: transparent;
+  color: #888;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+}
+
+.tab-btn .icon {
+  width: 24px;
+  height: 24px;
+}
+
+.tab-label {
+  display: none;
+}
+
+.tab-btn.active {
+  background: transparent;
+  color: #E63946;
+}
+
+.sidebar-brand {
+  display: none;
+}
+
+/* Desktop: the bottom tab bar becomes a left sidebar (logo + vertical nav),
+   CRM/dashboard-style, instead of the mobile bottom bar. Achieved by
+   reordering the existing elements with flexbox rather than duplicating
+   markup, so the same tab-switching JS keeps working unchanged. */
+@media (min-width: 900px) {
+  body {
+    flex-direction: row;
+    overflow: visible;
+  }
+
+  .bottom-nav {
+    order: -1;
+    flex: none;
+    width: 240px;
+    height: 100%;
+    padding-bottom: 0;
+    border-top: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .bottom-nav-inner {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    height: 100%;
+    max-width: none;
+    padding: 20px 14px;
+    gap: 4px;
+    overflow-y: auto;
+  }
+
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 24px;
+  }
+
+  .sidebar-brand img {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .sidebar-brand span {
+    font-family: "Obelix Pro", "Arial Black", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: 0.05em;
+    color: #f5f5f5;
+  }
+
+  .tab-btn {
+    flex: none;
+    height: auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    color: #999;
+  }
+
+  .tab-btn .icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .tab-label {
+    display: inline;
+    font-size: 0.92rem;
+    font-weight: 500;
+  }
+
+  .tab-btn.active {
+    background: linear-gradient(135deg, rgba(230, 57, 70, 0.16), rgba(193, 18, 31, 0.08));
+    color: #ffffff;
+  }
+
+  .app-header {
+    display: none;
+  }
+
+  .app-shell {
+    min-width: 0;
+  }
+
+  main,
+  main.wide {
+    /* No cap at all — some screens are wide enough that even 1400px still
+       left visible empty space. Same width on every tab, always 100% of
+       the space next to the sidebar, on any monitor size. */
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 32px 48px;
+  }
+}
+
+label {
+  display: block;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+#duration-input {
+  width: 120px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #161616;
+  color: #f0f0f5;
+  font-size: 1rem;
+}
+
+#duration-estimate {
+  color: #aaa;
+  font-size: 0.9rem;
+  margin: 8px 0 0;
+}
+
+.voice-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.voice-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #161616;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+@media (hover: hover) {
+  .voice-card:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
+}
+
+.voice-card.selected {
+  background: linear-gradient(135deg, rgba(230, 57, 70, 0.3), rgba(193, 18, 31, 0.2));
+  border-color: #C1121F;
+}
+
+.voice-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-card-info strong {
+  font-size: 0.95rem;
+}
+
+.voice-card-info span {
+  font-size: 0.78rem;
+  color: #aaa;
+}
+
+.voice-preview-btn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #E63946, #C1121F);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-preview-btn .icon,
+.voice-preview-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.template-textarea {
+  min-height: 70vh;
+  height: 70vh;
+  width: 100%;
+  margin-top: 16px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#settings-status {
+  margin-top: 8px;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+#notifications-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #E63946, #C1121F);
+}
+
+#notifications-status {
+  margin-top: 8px;
+}
+
+#generate-audio-btn {
+  margin-top: 12px;
+  width: 100%;
+  background: linear-gradient(135deg, #E63946, #C1121F);
+}
+
+#audio-wrapper {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(230, 57, 70, 0.25), rgba(193, 18, 31, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 24px rgba(230, 57, 70, 0.25);
+}
+
+.audio-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #f5c6c9;
+  text-transform: uppercase;
+}
+
+#audio-player {
+  width: 100%;
+  border-radius: 8px;
+  accent-color: #C1121F;
+}
+
+#next-btn {
+  margin-top: 12px;
+  width: 100%;
+  background: linear-gradient(135deg, #C1121F, #E63946);
+}
+
+#image-step {
+  margin-top: 24px;
+}
+
+#image-step h2 {
+  margin-bottom: 4px;
+}
+
+.hint {
+  color: #aaa;
+  font-size: 0.9rem;
+  margin-top: 0;
+}
+
+#upload-btn {
+  width: 100%;
+  margin-bottom: 16px;
+  background: #333;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.image-card {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+@media (hover: hover) {
+  .image-card:hover {
+    transform: scale(1.02);
+  }
+}
+
+.image-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-card.selected {
+  border-color: #C1121F;
+  box-shadow: 0 0 16px rgba(193, 18, 31, 0.5);
+}
+
+.image-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #E63946, #C1121F);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: white;
+}
+
+.image-card.selected .image-check {
+  display: flex;
+}
+
+#timeline-step {
+  margin-top: 24px;
+}
+
+#timeline-step h3 {
+  margin-bottom: 4px;
+}
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.timeline-row.dragging {
+  opacity: 0.4;
+  border-color: #C1121F;
+}
+
+.timeline-handle {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.timeline-handle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.timeline-handle:active {
+  cursor: grabbing;
+}
+
+.timeline-thumb {
+  width: 56px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: none;
+}
+
+.timeline-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-info strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.timeline-info span {
+  display: block;
+  font-size: 0.75rem;
+  color: #aaa;
+  margin: 2px 0 4px;
+}
+
+.timeline-info p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ddd;
+  overflow-wrap: anywhere;
+}
+
+.timeline-controls {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  flex: none;
+}
+
+.timeline-action-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #E63946, #C1121F);
+  border-radius: 8px;
+  color: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.timeline-action-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+#montage-btn {
+  margin-top: 16px;
+  width: 100%;
+  background: linear-gradient(135deg, #C1121F, #E63946);
+}
+
+#montage-canvas {
+  display: none;
+}
+
+#debug-log {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#montage-result {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(230, 57, 70, 0.25), rgba(193, 18, 31, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#montage-preview {
+  width: 100%;
+  max-width: 320px;
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 10px;
+  aspect-ratio: 9 / 16;
+  background: #000;
+}
+
+.download-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 12px;
+  border-radius: 8px;
+  background: #E63946;
+  color: white;
+  text-decoration: none;
+  font-size: 1rem;
+}
+
+#metadata-step {
+  margin-top: 24px;
+}
+
+#metadata-step h3 {
+  margin-bottom: 4px;
+}
+
+.titles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.title-item {
+  text-align: left;
+  padding: 12px;
+  border-radius: 8px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f0f0f5;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .title-item:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
+}
+
+.copy-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  position: relative;
+}
+
+.copy-row.copied::after {
+  content: "Copié !";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #E63946;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.copy-hint {
+  color: #777;
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+/* Settings: menu of sections instead of one long undifferentiated page. */
+.settings-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 18px 20px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-entry-text strong {
+  font-size: 1rem;
+  color: #f0f0f5;
+}
+
+.settings-entry-text span {
+  font-size: 0.82rem;
+  color: #888;
+  font-weight: 400;
+}
+
+.settings-chevron {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid #E63946;
+  border-right: 2px solid #E63946;
+  transform: rotate(45deg);
+}
+
+.settings-back {
+  width: auto;
+  align-self: flex-start;
+  background: #262626;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.settings-section h3 {
+  margin-bottom: 18px;
+}
+
+/* Inputs were cramped and easy to miss — give them the same presence as
+   the buttons they sit next to. */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="time"],
+input[type="datetime-local"],
+.field-lg {
+  width: 100%;
+  padding: 15px 16px;
+  font-size: 1rem;
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 12px;
+  color: #f0f0f5;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="time"]:focus,
+input[type="datetime-local"]:focus,
+.field-lg:focus {
+  outline: none;
+  border-color: #E63946;
+}
+
+.seo-block {
+  margin: 22px 0 6px;
+  padding-top: 18px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.seo-block h4 {
+  margin-bottom: 14px;
+  font-size: 0.95rem;
+  color: #f0f0f5;
+}
+
+.publish-cover-download {
+  max-width: 220px;
+  margin: 0 0 14px;
+}
+
+.publish-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.publish-intro {
+  margin-bottom: 16px;
+}
+
+.platform-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.platform-tab {
+  flex: 1;
+  padding: 11px 8px;
+  background: #1c1c1c;
+  border: 1px solid #2f2f2f;
+  border-radius: 10px;
+  color: #aaa;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.platform-tab.active {
+  background: linear-gradient(135deg, #E63946, #C1121F);
+  border-color: #C1121F;
+  color: #fff;
+}
+
+.publish-title,
+.publish-caption {
+  width: 100%;
+}
+
+.publish-caption {
+  min-height: 150px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  padding: 14px;
+}
+
+.publish-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+  font-weight: 400;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.publish-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #E63946;
+  margin: 0;
+  flex: none;
+}
+
+.publish-date {
+  width: 100%;
+  color-scheme: dark;
+}
+
+.publish-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.publish-status {
+  margin-top: 10px;
+  min-height: 1.2em;
+}
+
+.publish-cover {
+  max-width: 220px;
+}
+
+.thumbnail-preview-tiktok {
+  aspect-ratio: 1080 / 1350;
+}
+
+.thumbnail-preview {
+  width: 100%;
+  max-width: 320px;
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 10px;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  background: #000;
+}
+
+#thumbnail-download,
+#history-detail-thumbnail-download {
+  max-width: 320px;
+  margin: 0 auto 20px;
+}
+
+.copy-textarea {
+  width: 100%;
+  min-height: 220px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  padding: 16px;
+  cursor: pointer;
+}
+
+.copy-textarea-small {
+  min-height: 100px;
+}
+
+.copy-row .icon-btn {
+  width: 100%;
+  background: #333;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+textarea {
+  min-height: 100px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #161616;
+  color: #f0f0f5;
+  font-size: 1rem;
+  resize: vertical;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
+}
+
+button {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: #E63946;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+#clear-btn {
+  flex: 0 0 auto;
+  background: #333;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#result {
+  margin-top: 24px;
+  padding: 16px;
+  background: #161616;
+  border-radius: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+#status {
+  margin-top: 12px;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+#script-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin: 0;
+  max-width: 100%;
+  font-family: inherit;
+}
+
+.upload-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #161616;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  color: #aaa;
+}
+
+@media (hover: hover) {
+  .upload-tile:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+    color: #f0f0f5;
+  }
+}
+
+.upload-tile .icon {
+  width: 28px;
+  height: 28px;
+}
+
+/* Suggestions tab */
+
+.suggestions-heading {
+  margin: 20px 0 8px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #aaa;
+}
+
+.suggestions-heading:first-child {
+  margin-top: 8px;
+}
+
+.article-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+@media (hover: hover) {
+  .article-card:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
+}
+
+.article-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex: none;
+  background: #000;
+}
+
+.article-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.article-card-text span:first-child {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.article-card-source {
+  font-size: 0.72rem;
+  color: #E63946;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+#article-detail {
+  margin-top: 8px;
+}
+
+#article-back-btn {
+  width: auto;
+  padding: 10px 16px;
+  background: #333;
+  margin-bottom: 12px;
+}
+
+#article-image {
+  width: 100%;
+  border-radius: 10px;
+  margin: 8px 0 12px;
+  display: block;
+}
+
+#article-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #ddd;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+#article-source-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: #f5c6c9;
+  font-size: 0.85rem;
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+
+#article-source-link .icon {
+  width: 16px;
+  height: 16px;
+}
+
+@media (hover: hover) {
+  #article-source-link:hover {
+    text-decoration: underline;
+  }
+}
+
+#article-generate-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #E63946, #C1121F);
+}
+
+/* History tab */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.history-card {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+@media (hover: hover) {
+  .history-card:hover {
+    border-color: rgba(230, 57, 70, 0.6);
+  }
+}
+
+.history-thumb {
+  width: 56px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-info strong {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.history-info span {
+  font-size: 0.75rem;
+  color: #aaa;
+}
+
+.history-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.history-controls .timeline-action-btn {
+  width: 38px;
+  height: 38px;
+}
+
+#history-detail {
+  margin-top: 8px;
+}
+
+#history-detail h3 {
+  margin: 20px 0 4px;
+}
+
+#history-back-btn {
+  width: auto;
+  padding: 10px 16px;
+  background: #333;
+  margin-bottom: 12px;
+}
+
+.history-detail-video {
+  width: 100%;
+  max-width: 320px;
+  display: block;
+  margin: 0 auto 16px;
+  border-radius: 10px;
+  aspect-ratio: 9 / 16;
+  background: #000;
+}
+
+#history-detail-download {
+  max-width: 320px;
+  margin: 0 auto 20px;
+}
+
+@media (max-width: 480px) {
+  main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .button-row {
+    flex-direction: column;
+  }
+
+  #clear-btn {
+    order: 2;
+  }
+}
