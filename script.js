@@ -72,6 +72,7 @@ const durationEstimate = document.getElementById("duration-estimate");
 const status = document.getElementById("status");
 const clearBtn = document.getElementById("clear-btn");
 const audioPlayer = document.getElementById("audio-player");
+const continueToImagesBtn = document.getElementById("continue-to-images-btn");
 const audioWrapper = document.getElementById("audio-wrapper");
 const generateAudioBtn = document.getElementById("generate-audio-btn");
 const imageStep = document.getElementById("image-step");
@@ -86,14 +87,9 @@ const montagePreview = document.getElementById("montage-preview");
 const montageDownload = document.getElementById("montage-download");
 const timelineStep = document.getElementById("timeline-step");
 const timelineList = document.getElementById("timeline-list");
-const metadataStep = document.getElementById("metadata-step");
-const titlesList = document.getElementById("titles-list");
-const descriptionOutput = document.getElementById("description-output");
-const tagsOutput = document.getElementById("tags-output");
-const thumbnailPreview = document.getElementById("thumbnail-preview");
-const thumbnailDownload = document.getElementById("thumbnail-download");
-const thumbnailTiktokPreview = document.getElementById("thumbnail-tiktok-preview");
-const thumbnailTiktokDownload = document.getElementById("thumbnail-tiktok-download");
+// The SEO fiche and the thumbnails now live inside the publishing panel
+// (built from #publish-template), so there are no page-level elements for
+// them any more — openPublishPanel() owns that markup.
 const publishPanel = document.getElementById("publish-panel");
 const historyPublishPanel = document.getElementById("history-publish-panel");
 const bufferKeyInput = document.getElementById("buffer-key-input");
@@ -121,13 +117,6 @@ const historyDetail = document.getElementById("history-detail");
 const historyBackBtn = document.getElementById("history-back-btn");
 const historyDetailVideo = document.getElementById("history-detail-video");
 const historyDetailDownload = document.getElementById("history-detail-download");
-const historyDetailTitles = document.getElementById("history-detail-titles");
-const historyDetailDescription = document.getElementById("history-detail-description");
-const historyDetailTags = document.getElementById("history-detail-tags");
-const historyDetailThumbnail = document.getElementById("history-detail-thumbnail");
-const historyDetailThumbnailDownload = document.getElementById("history-detail-thumbnail-download");
-const historyDetailThumbnailTiktok = document.getElementById("history-detail-thumbnail-tiktok");
-const historyDetailThumbnailTiktokDownload = document.getElementById("history-detail-thumbnail-tiktok-download");
 
 function log(msg) {
   debugLog.hidden = false;
@@ -186,6 +175,7 @@ let defaultTemplate = "";
 initButtons();
 initTabs();
 initSettings();
+initSettingsMenu();
 initPublishSettings();
 initSuggestions();
 initHistory();
@@ -207,7 +197,10 @@ function initServiceWorker() {
       // Browsers can keep serving a cached copy of sw.js for up to 24h, so
       // an update wouldn't be picked up until then otherwise. Forcing a
       // check on every launch means a new version is detected right away.
-      registration.update();
+      // The .catch() matters: on a flaky/offline launch this rejects with
+      // "Script ... load failed", and unhandled it surfaced as a scary error
+      // in the log even though the app runs fine from cache.
+      registration.update().catch(() => {});
 
       // sw.js already calls skipWaiting()/clients.claim(), so as soon as a
       // new worker takes over, reload once to actually load the new files —
@@ -299,13 +292,12 @@ function updateNotificationsUi(subscribed) {
 }
 
 function initButtons() {
-  generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio et continuer");
+  generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio");
+  continueToImagesBtn.innerHTML = iconLabel("film", "Continuer vers les images");
   regenerateImagesBtn.innerHTML = iconLabel("refresh", "Régénérer");
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
   montageDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
   historyDetailDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
-  thumbnailDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
-  historyDetailThumbnailDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
   articleBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
   articleGenerateBtn.innerHTML = iconLabel("film", "Générer en short");
   historyBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
@@ -555,7 +547,7 @@ clearBtn.addEventListener("click", () => {
   timelineList.innerHTML = "";
   montageBtn.hidden = true;
   montageResult.hidden = true;
-  metadataStep.hidden = true;
+  publishPanel.innerHTML = "";
   updateConfirmLabel();
   promptInput.focus();
 });
@@ -575,7 +567,7 @@ form.addEventListener("submit", async (e) => {
   imageStep.hidden = true;
   montageBtn.hidden = true;
   montageResult.hidden = true;
-  metadataStep.hidden = true;
+  publishPanel.innerHTML = "";
   selectedImages = [];
   imagePool = [];
   imageReserve = [];
@@ -654,7 +646,8 @@ generateAudioBtn.addEventListener("click", async () => {
         ? "ElevenLabs indisponible (quota) — voix de secours Cloudflare utilisée."
         : "";
 
-    goToImageStep();
+    // Deliberately does NOT jump to the image step — the user listens to the
+    // narration first and moves on with the button below when ready.
   } catch (err) {
     status.textContent = `Audio indisponible (${err.message}). La voix du navigateur va la lire à titre d'aperçu, réessaie avant de continuer.`;
     speakWithBrowser(currentVoiceScript);
@@ -699,10 +692,9 @@ confirmImagesBtn.addEventListener("click", () => {
   montageBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
-montageBtn.addEventListener("click", generateMontage);
+continueToImagesBtn.addEventListener("click", goToImageStep);
 
-descriptionOutput.addEventListener("click", () => copyFromTextarea(descriptionOutput));
-tagsOutput.addEventListener("click", () => copyFromTextarea(tagsOutput));
+montageBtn.addEventListener("click", generateMontage);
 
 // The copy buttons are gone — clicking the text zone itself copies, with a
 // brief "Copié !" badge overlaid on the zone as feedback.
@@ -936,27 +928,32 @@ async function fetchAniListImagesClient(query, page = 1) {
     const animeList = data.data?.anime?.media || [];
     const mangaList = data.data?.manga?.media || [];
 
-    const animeUrls = animeList.flatMap((media, i) => [
-      media.coverImage?.extraLarge || media.coverImage?.large,
-      media.bannerImage,
-      ...(media.characters?.nodes || []).map((n) => n.image?.large),
-      ...(media.streamingEpisodes || []).slice((page - 1) * 12, page * 12).map((ep) => ep.thumbnail),
+    // Grouped by KIND rather than per-entry, because key visuals and covers
+    // are the images that actually carry the show's title/logo — the ones
+    // worth putting on screen. Character portraits and episode stills are
+    // still offered, just after them, instead of burying the good art.
+    const keyVisuals = [
+      ...animeList.map((m) => m.coverImage?.extraLarge || m.coverImage?.large),
+      ...mangaList.map((m) => m.coverImage?.extraLarge || m.coverImage?.large),
+      ...animeList.map((m) => m.bannerImage),
+      ...mangaList.map((m) => m.bannerImage),
       // Franchise relations only from the best match — the runner-ups'
       // relations drift too far from the requested show.
-      ...(i === 0
-        ? (media.relations?.nodes || [])
-            .filter((n) => n.type === "ANIME")
-            .flatMap((n) => [n.coverImage?.extraLarge || n.coverImage?.large, n.bannerImage])
-        : []),
-    ]);
+      ...(animeList[0]?.relations?.nodes || [])
+        .filter((n) => n.type === "ANIME")
+        .flatMap((n) => [n.coverImage?.extraLarge || n.coverImage?.large, n.bannerImage]),
+    ];
 
-    const mangaUrls = mangaList.flatMap((media) => [
-      media.coverImage?.extraLarge || media.coverImage?.large,
-      media.bannerImage,
-      ...(media.characters?.nodes || []).map((n) => n.image?.large),
-    ]);
+    const episodeStills = animeList.flatMap((m) =>
+      (m.streamingEpisodes || []).slice((page - 1) * 12, page * 12).map((ep) => ep.thumbnail)
+    );
 
-    return [...new Set([...animeUrls, ...mangaUrls].filter(Boolean))];
+    const portraits = [
+      ...animeList.flatMap((m) => (m.characters?.nodes || []).map((n) => n.image?.large)),
+      ...mangaList.flatMap((m) => (m.characters?.nodes || []).map((n) => n.image?.large)),
+    ];
+
+    return [...new Set([...keyVisuals, ...episodeStills, ...portraits].filter(Boolean))];
   } catch {
     return [];
   }
@@ -1227,15 +1224,6 @@ async function generateMontage() {
       images[0], thumbnailTitle, TIKTOK_THUMBNAIL_SIZE.width, TIKTOK_THUMBNAIL_SIZE.height
     );
 
-    thumbnailPreview.src = thumbnail;
-    thumbnailPreview.hidden = false;
-    thumbnailDownload.href = thumbnail;
-    thumbnailDownload.hidden = false;
-    thumbnailTiktokPreview.src = thumbnailTikTok;
-    thumbnailTiktokPreview.hidden = false;
-    thumbnailTiktokDownload.href = thumbnailTikTok;
-    thumbnailTiktokDownload.hidden = false;
-
     const historyId = await saveToHistory({
       voiceScript: currentVoiceScript,
       videoBlob: recording.blob,
@@ -1286,19 +1274,8 @@ async function generateMetadata() {
       throw new Error(data.error || "Erreur fiche technique");
     }
 
-    titlesList.innerHTML = "";
-    (data.titles || []).forEach((title) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "title-item";
-      item.textContent = title;
-      item.addEventListener("click", () => copyToClipboard(title, item, title));
-      titlesList.appendChild(item);
-    });
-
-    descriptionOutput.value = data.description || "";
-    tagsOutput.value = data.tags || "";
-    metadataStep.hidden = false;
+    // Rendering is left to openPublishPanel(), which shows this data inside
+    // the publishing panel rather than as a separate block above it.
     return data;
   } catch (err) {
     status.textContent = `Erreur fiche technique : ${err.message}`;
@@ -1361,6 +1338,12 @@ function drawMontageFrameAt(ctx, images, t, durationMs, subtitleWords, timingsMs
 
   drawKenBurnsFrame(ctx, images[index], w, h, progress, zoomIn, bgCache);
   drawSubtitle(ctx, subtitleWords, w, h, t, durationMs, timingsMs);
+
+  // Same branding as the thumbnail so the video and its cover read as one
+  // piece: SukiAMV pill top-left and the red bar along the bottom.
+  drawBrandBadge(ctx, w / THUMBNAIL_REFERENCE_WIDTH);
+  ctx.fillStyle = "#E63946";
+  ctx.fillRect(0, h - 12, w, 12);
 }
 
 async function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
@@ -1752,11 +1735,16 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
 
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
-  ctx.lineWidth = fontSize * 0.16 + 1;
+  // Matches the thumbnail's treatment: black rim, red mid outline, white fill.
+  ctx.lineWidth = fontSize * 0.22;
   ctx.strokeStyle = "#000000";
   ctx.strokeText(word, 0, 0);
 
   ctx.shadowColor = "transparent";
+  ctx.lineWidth = fontSize * 0.1;
+  ctx.strokeStyle = "#E63946";
+  ctx.strokeText(word, 0, 0);
+
   ctx.fillStyle = "#ffffff";
   ctx.fillText(word, 0, 0);
 
@@ -1845,17 +1833,38 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
   const clean = (text || "").trim().toUpperCase();
   if (!clean) return;
 
-  const maxWidth = canvasW - 64 * s;
+  const sidePad = 40 * s;
+  const bottomPad = 56 * s;
+  const maxWidth = canvasW - sidePad * 2;
+  // The text block may never climb past the middle of the frame, otherwise
+  // it runs off the darkened gradient and over the artwork.
+  const maxBlockHeight = canvasH * 0.42;
+  const MAX_LINES = 4;
+
+  // Shrink until the wrapped text fits the box on BOTH axes. Checking only
+  // the line count let a single long word overflow horizontally and a tall
+  // block overflow past the red bar — the overflow seen on the 4:5 cover.
   let fontSize = 58 * s;
   let lines = [];
+  const minFont = 22 * s;
 
-  while (fontSize >= 34 * s) {
+  while (true) {
     ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
     lines = wrapTextLines(ctx, clean, maxWidth);
-    if (lines.length <= 4) break;
-    fontSize -= 4 * s;
+    const widest = Math.max(...lines.map((l) => ctx.measureText(l).width), 0);
+    const blockHeight = lines.length * fontSize * 1.5;
+    const fits = lines.length <= MAX_LINES && widest <= maxWidth && blockHeight <= maxBlockHeight;
+    if (fits || fontSize <= minFont) break;
+    fontSize = Math.max(minFont, fontSize - 3 * s);
   }
-  lines = lines.slice(0, 4);
+
+  // A single unbreakable word longer than the frame (some titles have no
+  // spaces at all) still has to be cut rather than bleed off the edges.
+  ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
+  lines = lines.flatMap((line) =>
+    ctx.measureText(line).width > maxWidth ? hardSplitToWidth(ctx, line, maxWidth) : [line]
+  );
+  lines = lines.slice(0, MAX_LINES);
 
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
@@ -1867,7 +1876,7 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
   // side, so the line box needs generous spacing — a tighter 1.15 line
   // height made adjacent lines' rims collide and overlap.
   const lineHeight = fontSize * 1.5;
-  const startY = canvasH - 56 * s - (lines.length - 1) * lineHeight;
+  const startY = canvasH - bottomPad - (lines.length - 1) * lineHeight;
 
   lines.forEach((line, i) => {
     const y = startY + i * lineHeight;
@@ -1890,6 +1899,22 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
     ctx.fillStyle = "#ffffff";
     ctx.fillText(line, canvasW / 2, y);
   });
+}
+
+// Last-resort splitter for a single word wider than the frame.
+function hardSplitToWidth(ctx, word, maxWidth) {
+  const out = [];
+  let current = "";
+  for (const char of word) {
+    if (current && ctx.measureText(current + char).width > maxWidth) {
+      out.push(current);
+      current = char;
+    } else {
+      current += char;
+    }
+  }
+  if (current) out.push(current);
+  return out;
 }
 
 function wrapTextLines(ctx, text, maxWidth) {
@@ -2124,6 +2149,10 @@ function openPublishPanel(item, host) {
   const titleInput = panel.querySelector(".publish-title");
   const captionInput = panel.querySelector(".publish-caption");
   const cover = panel.querySelector(".publish-cover");
+  const coverDownload = panel.querySelector(".publish-cover-download");
+  const seoTitles = panel.querySelector(".publish-titles");
+  const seoDescription = panel.querySelector(".publish-seo-description");
+  const seoTags = panel.querySelector(".publish-seo-tags");
   const nowToggle = panel.querySelector(".publish-now");
   const scheduleWrap = panel.querySelector(".publish-schedule");
   const dateInput = panel.querySelector(".publish-date");
@@ -2147,10 +2176,31 @@ function openPublishPanel(item, host) {
     const draft = drafts[platform];
     titleInput.value = draft ? draft.title : buildPostTitle(item);
     captionInput.value = draft ? draft.caption : buildCaption(platform, item);
+    // TikTok's cover picker uses a 4:5 frame; the others use the 9:16 one.
     const coverSrc = platform === "tiktok" && item.thumbnailTikTok ? item.thumbnailTikTok : item.thumbnail;
     cover.src = coverSrc || "";
     cover.hidden = !coverSrc;
+    coverDownload.href = coverSrc || "";
+    coverDownload.hidden = !coverSrc;
+    coverDownload.download = platform === "tiktok" ? "sukiamv-miniature-tiktok.jpg" : "sukiamv-miniature.jpg";
   }
+
+  // Every SEO field copies on click, no buttons.
+  seoDescription.value = item.description || "";
+  seoTags.value = item.tags || "";
+  seoDescription.addEventListener("click", () => copyFromTextarea(seoDescription));
+  seoTags.addEventListener("click", () => copyFromTextarea(seoTags));
+
+  seoTitles.innerHTML = "";
+  const allTitles = item.titles?.length ? item.titles : [item.title].filter(Boolean);
+  allTitles.forEach((title) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "title-item";
+    btn.textContent = title;
+    btn.addEventListener("click", () => copyToClipboard(title, btn, title));
+    seoTitles.appendChild(btn);
+  });
 
   tabs.forEach((t) => t.addEventListener("click", () => loadPlatform(t.dataset.platform)));
 
@@ -2198,6 +2248,40 @@ function openPublishPanel(item, host) {
   });
 
   host.appendChild(node);
+}
+
+// Settings used to be one long scroll of unrelated controls. It's now a menu
+// of sections, each opened on its own screen with a back button.
+function initSettingsMenu() {
+  const menu = document.getElementById("settings-menu");
+  const sections = [...document.querySelectorAll(".settings-section")];
+
+  function showMenu() {
+    menu.hidden = false;
+    sections.forEach((s) => (s.hidden = true));
+  }
+
+  menu.querySelectorAll(".settings-entry").forEach((entry) => {
+    entry.addEventListener("click", () => {
+      menu.hidden = true;
+      sections.forEach((s) => (s.hidden = s.dataset.section !== entry.dataset.section));
+      document.querySelector("main").scrollTo({ top: 0 });
+    });
+  });
+
+  sections.forEach((section) => {
+    const back = section.querySelector(".settings-back");
+    back.innerHTML = `<span class="icon">${ICONS.back}</span><span>Réglages</span>`;
+    back.addEventListener("click", showMenu);
+  });
+
+  // Leaving and re-entering the tab should land back on the menu, and the
+  // "re-tap active tab = back" gesture should close an open section first.
+  document.querySelector('.tab-btn[data-tab="settings"]').addEventListener("click", () => {
+    if (sections.some((s) => !s.hidden)) showMenu();
+  });
+
+  showMenu();
 }
 
 function initPublishSettings() {
@@ -2311,8 +2395,6 @@ function initHistory() {
     historyDetailVideo.removeAttribute("src");
     historyDetailVideo.load();
   });
-  historyDetailDescription.addEventListener("click", () => copyFromTextarea(historyDetailDescription));
-  historyDetailTags.addEventListener("click", () => copyFromTextarea(historyDetailTags));
 }
 
 function openHistoryDetail(item) {
@@ -2323,37 +2405,9 @@ function openHistoryDetail(item) {
   historyDetailDownload.href = URL.createObjectURL(item.videoBlob);
   historyDetailDownload.download = `sukishort.${item.videoExt}`;
 
-  historyDetailTitles.innerHTML = "";
-  const titles = item.titles && item.titles.length ? item.titles : [item.title || "Sans titre"];
-  titles.forEach((title) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "title-item";
-    btn.textContent = title;
-    btn.addEventListener("click", () => copyToClipboard(title, btn, title));
-    historyDetailTitles.appendChild(btn);
-  });
-
-  historyDetailDescription.value = item.description || "";
-  historyDetailTags.value = item.tags || "";
-
-  // Older history entries stored a plain source-image URL as thumbnail;
-  // both that and the newer generated data-URL miniature display fine.
-  const hasThumbnail = !!item.thumbnail;
-  historyDetailThumbnail.src = item.thumbnail || "";
-  historyDetailThumbnail.hidden = !hasThumbnail;
-  historyDetailThumbnailDownload.href = item.thumbnail || "";
-  historyDetailThumbnailDownload.hidden = !hasThumbnail;
-
-  // Only entries generated since the TikTok cover was added carry one.
-  const hasTikTok = !!item.thumbnailTikTok;
-  historyDetailThumbnailTiktok.src = item.thumbnailTikTok || "";
-  historyDetailThumbnailTiktok.hidden = !hasTikTok;
-  historyDetailThumbnailTiktokDownload.href = item.thumbnailTikTok || "";
-  historyDetailThumbnailTiktokDownload.hidden = !hasTikTok;
-
-  // Same publishing panel as right after generation, so an old project can
-  // be scheduled without re-downloading and re-uploading anything.
+  // The SEO fiche, covers and scheduling all live in the publishing panel —
+  // same panel as right after generation, so an old project can be scheduled
+  // without re-downloading and re-uploading anything.
   openPublishPanel(item, historyPublishPanel);
 
   historyDetail.scrollIntoView({ behavior: "smooth", block: "start" });

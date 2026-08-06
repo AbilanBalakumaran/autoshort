@@ -81,6 +81,7 @@
         <div id="audio-wrapper" hidden>
           <span class="audio-label">Narration</span>
           <audio id="audio-player" controls></audio>
+          <button type="button" id="continue-to-images-btn" class="icon-btn"></button>
         </div>
       </section>
 
@@ -115,31 +116,6 @@
           <a id="montage-download" class="download-link icon-btn" download="sukishort.mp4"></a>
         </div>
 
-        <section id="metadata-step" hidden>
-          <h3>Fiche technique</h3>
-
-          <label>Titres suggérés</label>
-          <div id="titles-list" class="titles-list"></div>
-
-          <label for="description-output">Description <span class="copy-hint">(clique pour copier)</span></label>
-          <div class="copy-row">
-            <textarea id="description-output" class="copy-textarea" readonly></textarea>
-          </div>
-
-          <label for="tags-output">Tags YouTube <span class="copy-hint">(clique pour copier)</span></label>
-          <div class="copy-row">
-            <textarea id="tags-output" class="copy-textarea copy-textarea-small" readonly></textarea>
-          </div>
-
-          <label>Miniature YouTube / Shorts (9:16)</label>
-          <img id="thumbnail-preview" class="thumbnail-preview" alt="" hidden />
-          <a id="thumbnail-download" class="download-link icon-btn" download="sukishort-miniature.jpg" hidden></a>
-
-          <label>Miniature TikTok (1080 × 1350)</label>
-          <img id="thumbnail-tiktok-preview" class="thumbnail-preview thumbnail-preview-tiktok" alt="" hidden />
-          <a id="thumbnail-tiktok-download" class="download-link icon-btn" download="sukishort-miniature-tiktok.jpg" hidden></a>
-        </section>
-
         <div id="publish-panel" class="publish-host"></div>
       </section>
     </section>
@@ -171,70 +147,95 @@
         <video id="history-detail-video" class="history-detail-video" controls playsinline></video>
         <a id="history-detail-download" class="download-link icon-btn" download></a>
 
-        <h3>Fiche SEO</h3>
-
-        <label>Titres suggérés</label>
-        <div id="history-detail-titles" class="titles-list"></div>
-
-        <label for="history-detail-description">Description <span class="copy-hint">(clique pour copier)</span></label>
-        <div class="copy-row">
-          <textarea id="history-detail-description" class="copy-textarea" readonly></textarea>
-        </div>
-
-        <label for="history-detail-tags">Tags YouTube <span class="copy-hint">(clique pour copier)</span></label>
-        <div class="copy-row">
-          <textarea id="history-detail-tags" class="copy-textarea copy-textarea-small" readonly></textarea>
-        </div>
-
-        <label>Miniature YouTube / Shorts (9:16)</label>
-        <img id="history-detail-thumbnail" class="thumbnail-preview" alt="" hidden />
-        <a id="history-detail-thumbnail-download" class="download-link icon-btn" download="sukishort-miniature.jpg" hidden></a>
-
-        <label>Miniature TikTok (1080 × 1350)</label>
-        <img id="history-detail-thumbnail-tiktok" class="thumbnail-preview thumbnail-preview-tiktok" alt="" hidden />
-        <a id="history-detail-thumbnail-tiktok-download" class="download-link icon-btn" download="sukishort-miniature-tiktok.jpg" hidden></a>
-
         <div id="history-publish-panel" class="publish-host"></div>
       </section>
     </section>
 
     <section id="tab-settings" class="tab-panel" hidden>
-      <label>Publication (Buffer)</label>
-      <p class="hint">Colle ta clé API personnelle Buffer (Buffer → Settings → API) pour programmer directement depuis l'app.</p>
-      <input type="password" id="buffer-key-input" placeholder="Clé API Buffer" autocomplete="off" />
-      <div class="button-row">
-        <button type="button" id="save-buffer-key-btn">Enregistrer la clé</button>
-        <button type="button" id="test-buffer-btn">Tester la connexion</button>
+      <div id="settings-menu" class="settings-menu">
+        <button type="button" class="settings-entry" data-section="publishing">
+          <span class="settings-entry-text">
+            <strong>Publication</strong>
+            <span>Buffer, heure et mode de publication par défaut</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+        <button type="button" class="settings-entry" data-section="voice">
+          <span class="settings-entry-text">
+            <strong>Voix &amp; audio</strong>
+            <span>Voix de narration et durée par défaut</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+        <button type="button" class="settings-entry" data-section="notifications">
+          <span class="settings-entry-text">
+            <strong>Notifications</strong>
+            <span>Alertes quand une nouvelle actu sort</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
+        <button type="button" class="settings-entry" data-section="template">
+          <span class="settings-entry-text">
+            <strong>Template du script</strong>
+            <span>Personnalise la consigne d'écriture</span>
+          </span>
+          <span class="settings-chevron"></span>
+        </button>
       </div>
-      <p id="buffer-status" class="hint"></p>
 
-      <label for="publish-time-input">Heure de publication par défaut (heure française)</label>
-      <input type="time" id="publish-time-input" value="06:40" />
+      <section class="settings-section" data-section="publishing" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Publication</h3>
 
-      <label class="publish-toggle">
-        <input type="checkbox" id="publish-now-default" />
-        <span>Publier immédiatement par défaut (sinon programmé)</span>
-      </label>
+        <label for="buffer-key-input">Clé API Buffer</label>
+        <p class="hint">Buffer → Settings → API → crée une clé personnelle, puis colle-la ici.</p>
+        <input type="password" id="buffer-key-input" class="field-lg" placeholder="Colle ta clé Buffer ici" autocomplete="off" />
+        <div class="button-row">
+          <button type="button" id="save-buffer-key-btn">Enregistrer la clé</button>
+          <button type="button" id="test-buffer-btn">Tester la connexion</button>
+        </div>
+        <p id="buffer-status" class="hint"></p>
 
-      <label>Notifications</label>
-      <p class="hint">Reçois une notification dès qu'une nouvelle actu anime/manga est publiée.</p>
-      <button type="button" id="notifications-btn" class="icon-btn"></button>
-      <p id="notifications-status" class="hint"></p>
+        <label for="publish-time-input">Heure de publication par défaut (heure française)</label>
+        <input type="time" id="publish-time-input" class="field-lg" value="06:40" />
 
-      <p>Personnalise le template utilisé pour générer le prompt vidéo.</p>
+        <label class="publish-toggle">
+          <input type="checkbox" id="publish-now-default" />
+          <span>Publier immédiatement par défaut (sinon programmé)</span>
+        </label>
+      </section>
 
-      <label for="duration-input">Durée par défaut de l'audio (secondes)</label>
-      <input type="number" id="duration-input" min="4" max="60" step="1" value="16" />
+      <section class="settings-section" data-section="voice" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Voix &amp; audio</h3>
 
-      <label>Voix ElevenLabs</label>
-      <div id="voice-list" class="voice-list"></div>
-      <audio id="voice-preview" hidden></audio>
+        <label for="duration-input">Durée par défaut de l'audio (secondes)</label>
+        <input type="number" id="duration-input" class="field-lg" min="4" max="60" step="1" value="16" />
 
-      <textarea id="template-input" class="template-textarea"></textarea>
-      <div class="button-row">
-        <button type="button" id="save-template-btn">Enregistrer</button>
-        <button type="button" id="reset-template-btn">Réinitialiser</button>
-      </div>
+        <label>Voix de narration</label>
+        <div id="voice-list" class="voice-list"></div>
+        <audio id="voice-preview" hidden></audio>
+      </section>
+
+      <section class="settings-section" data-section="notifications" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Notifications</h3>
+        <p class="hint">Reçois une notification dès qu'une nouvelle actu anime/manga est publiée.</p>
+        <button type="button" id="notifications-btn" class="icon-btn"></button>
+        <p id="notifications-status" class="hint"></p>
+      </section>
+
+      <section class="settings-section" data-section="template" hidden>
+        <button type="button" class="settings-back icon-btn"></button>
+        <h3>Template du script</h3>
+        <p class="hint">Personnalise la consigne envoyée à l'IA pour écrire le script vocal.</p>
+        <textarea id="template-input" class="template-textarea"></textarea>
+        <div class="button-row">
+          <button type="button" id="save-template-btn">Enregistrer</button>
+          <button type="button" id="reset-template-btn">Réinitialiser</button>
+        </div>
+      </section>
+
       <p id="settings-status"></p>
     </section>
   </main>
@@ -257,8 +258,25 @@
       <label>Légende</label>
       <textarea class="publish-caption"></textarea>
 
-      <label>Image de couverture</label>
+      <label>Image de couverture <span class="copy-hint">(générée automatiquement)</span></label>
       <img class="publish-cover thumbnail-preview" alt="" />
+      <a class="publish-cover-download download-link icon-btn" download="sukiamv-miniature.jpg"></a>
+
+      <div class="seo-block">
+        <h4>Fiche SEO <span class="copy-hint">(clique un champ pour le copier)</span></h4>
+        <label>Titres suggérés</label>
+        <div class="publish-titles titles-list"></div>
+
+        <label>Description</label>
+        <div class="copy-row">
+          <textarea class="publish-seo-description copy-textarea" readonly></textarea>
+        </div>
+
+        <label>Tags</label>
+        <div class="copy-row">
+          <textarea class="publish-seo-tags copy-textarea copy-textarea-small" readonly></textarea>
+        </div>
+      </div>
 
       <label class="publish-toggle">
         <input type="checkbox" class="publish-now" />

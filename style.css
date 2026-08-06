@@ -763,6 +763,109 @@ label {
   font-weight: 400;
 }
 
+/* Settings: menu of sections instead of one long undifferentiated page. */
+.settings-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 18px 20px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-entry-text strong {
+  font-size: 1rem;
+  color: #f0f0f5;
+}
+
+.settings-entry-text span {
+  font-size: 0.82rem;
+  color: #888;
+  font-weight: 400;
+}
+
+.settings-chevron {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid #E63946;
+  border-right: 2px solid #E63946;
+  transform: rotate(45deg);
+}
+
+.settings-back {
+  width: auto;
+  align-self: flex-start;
+  background: #262626;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.settings-section h3 {
+  margin-bottom: 18px;
+}
+
+/* Inputs were cramped and easy to miss — give them the same presence as
+   the buttons they sit next to. */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="time"],
+input[type="datetime-local"],
+.field-lg {
+  width: 100%;
+  padding: 15px 16px;
+  font-size: 1rem;
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 12px;
+  color: #f0f0f5;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="time"]:focus,
+input[type="datetime-local"]:focus,
+.field-lg:focus {
+  outline: none;
+  border-color: #E63946;
+}
+
+.seo-block {
+  margin: 22px 0 6px;
+  padding-top: 18px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.seo-block h4 {
+  margin-bottom: 14px;
+  font-size: 0.95rem;
+  color: #f0f0f5;
+}
+
+.publish-cover-download {
+  max-width: 220px;
+  margin: 0 0 14px;
+}
+
 .publish-panel {
   margin-top: 28px;
   padding-top: 24px;
