@@ -1806,8 +1806,11 @@ function drawBrandBadge(ctx, s = 1) {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   const textW = ctx.measureText(text).width;
-  const x = 20 * s;
-  const y = 20 * s;
+  // Inset well away from the corner: TikTok/Instagram/Shorts all overlay
+  // their own UI and round the corners of the frame, so a badge tight to the
+  // edge gets clipped or hidden once published.
+  const x = 52 * s;
+  const y = 60 * s;
   const padX = 16 * s;
   const h = 44 * s;
 
@@ -1833,12 +1836,15 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
   const clean = (text || "").trim().toUpperCase();
   if (!clean) return;
 
-  const sidePad = 40 * s;
-  const bottomPad = 56 * s;
+  // Generous margins: social players crop and overlay their own UI near the
+  // edges, so the artwork needs to sit well inside the frame rather than
+  // merely inside it.
+  const sidePad = 76 * s;
+  const bottomPad = 96 * s;
   const maxWidth = canvasW - sidePad * 2;
   // The text block may never climb past the middle of the frame, otherwise
   // it runs off the darkened gradient and over the artwork.
-  const maxBlockHeight = canvasH * 0.42;
+  const maxBlockHeight = canvasH * 0.4;
   const MAX_LINES = 4;
 
   // Shrink until the wrapped text fits the box on BOTH axes. Checking only
@@ -1850,10 +1856,15 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
 
   while (true) {
     ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
-    lines = wrapTextLines(ctx, clean, maxWidth);
+    // The outline is painted OUTSIDE the glyph, so the real painted width is
+    // the measured width plus a half-stroke on each side. Ignoring that is
+    // what let the text visually touch the edges.
+    const strokeBleed = fontSize * 0.22;
+    lines = wrapTextLines(ctx, clean, maxWidth - strokeBleed);
     const widest = Math.max(...lines.map((l) => ctx.measureText(l).width), 0);
     const blockHeight = lines.length * fontSize * 1.5;
-    const fits = lines.length <= MAX_LINES && widest <= maxWidth && blockHeight <= maxBlockHeight;
+    const fits =
+      lines.length <= MAX_LINES && widest + strokeBleed <= maxWidth && blockHeight <= maxBlockHeight;
     if (fits || fontSize <= minFont) break;
     fontSize = Math.max(minFont, fontSize - 3 * s);
   }
@@ -1861,8 +1872,9 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
   // A single unbreakable word longer than the frame (some titles have no
   // spaces at all) still has to be cut rather than bleed off the edges.
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
+  const splitWidth = maxWidth - fontSize * 0.22;
   lines = lines.flatMap((line) =>
-    ctx.measureText(line).width > maxWidth ? hardSplitToWidth(ctx, line, maxWidth) : [line]
+    ctx.measureText(line).width > splitWidth ? hardSplitToWidth(ctx, line, splitWidth) : [line]
   );
   lines = lines.slice(0, MAX_LINES);
 
