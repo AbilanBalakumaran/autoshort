@@ -1064,14 +1064,25 @@ function addImageCard(src, isNew = false) {
   const card = document.createElement("div");
   card.className =
     "image-card" + (selectedImages.includes(src) ? " selected" : "") + (isNew ? " image-card-new" : "");
+  // Identity lives on the card, not on img.src: a proxy retry rewrites the
+  // latter, which would otherwise break the selection/numbering match.
+  card.dataset.src = src;
 
   const img = document.createElement("img");
   img.src = src;
   img.alt = "Image proposée";
   img.loading = "lazy";
-  // Dead/hotlink-blocked URLs remove themselves from the grid and the
-  // selection so a broken image can never make it into the montage.
+  // Many hosts (Google results especially) block hotlinking, so a first
+  // failure is retried through our proxy before giving up. Only if that
+  // fails too does the card remove itself, along with its selection, so a
+  // truly broken image can never reach the montage.
+  let proxyTried = false;
   img.onerror = () => {
+    if (!proxyTried && !src.startsWith("data:") && !src.startsWith("blob:")) {
+      proxyTried = true;
+      img.src = `${WORKER_URL}/image-proxy?url=${encodeURIComponent(src)}`;
+      return;
+    }
     const i = selectedImages.indexOf(src);
     if (i !== -1) {
       selectedImages.splice(i, 1);
@@ -1104,9 +1115,9 @@ function addImageCard(src, isNew = false) {
 
 function syncGridSelection() {
   imageGrid.querySelectorAll(".image-card").forEach((card) => {
-    const img = card.querySelector("img");
-    if (!img) return; // the "+" upload tile has no image
-    const index = selectedImages.indexOf(img.src);
+    const src = card.dataset.src;
+    if (!src) return; // the "+" upload tile has no image
+    const index = selectedImages.indexOf(src);
     card.classList.toggle("selected", index !== -1);
     const badge = card.querySelector(".image-check");
     if (badge) badge.textContent = index === -1 ? "" : String(index + 1);

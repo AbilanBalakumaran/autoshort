@@ -12,7 +12,7 @@ export async function onRequestOptions() {
 // limit, outage) can be diagnosed in production without redeploying.
 let sourceErrors = {};
 
-export async function onRequestPost({ request }) {
+export async function onRequestPost({ request, env }) {
   const { prompt, showName, debug, page: rawPage } = await request.json();
   const page = Math.max(1, Math.min(10, Number(rawPage) || 1));
   sourceErrors = {};
@@ -32,14 +32,29 @@ export async function onRequestPost({ request }) {
   // Manga variants included because plenty of covered news is about
   // announced adaptations that aren't in the anime databases yet — the
   // source manga's volume covers and character art already are.
-  const [malImages, aniListImages, kitsuImages, malMangaImages] = await Promise.all([
-    fetchRealShowImages(query, page),
-    fetchAniListImages(query),
-    fetchKitsuImages(query, page),
-    fetchMalMangaImages(query, page),
-  ]);
+  // Google image search is added on top when credentials are configured: it
+  // finds exactly what the user would find by googling the show's name —
+  // key visuals and news art carrying the title — which the structured
+  // databases don't always have. Skipped silently when not set up.
+  const [malImages, aniListImages, kitsuImages, malMangaImages, googleImages, tmdbImages] =
+    await Promise.all([
+      fetchRealShowImages(query, page),
+      fetchAniListImages(query),
+      fetchKitsuImages(query, page),
+      fetchMalMangaImages(query, page),
+      fetchGoogleImages(query, page, env),
+      fetchTmdbImages(query, page, env),
+    ]);
 
-  let images = interleave([malImages, aniListImages, kitsuImages, malMangaImages]).slice(0, MAX_IMAGES);
+  // Title-bearing promotional art leads the grid.
+  let images = interleave([
+    googleImages,
+    tmdbImages,
+    malImages,
+    aniListImages,
+    kitsuImages,
+    malMangaImages,
+  ]).slice(0, MAX_IMAGES);
 
   // Still short and the show-specific search may have missed (very obscure
   // entry) — retry the whole prompt text as a broader search.
@@ -62,10 +77,16 @@ export async function onRequestPost({ request }) {
   if (debug) {
     payload.debug = {
       counts: {
+        tmdb: tmdbImages.length,
+        google: googleImages.length,
         mal: malImages.length,
         aniList: aniListImages.length,
         kitsu: kitsuImages.length,
         malManga: malMangaImages.length,
+      },
+      configured: {
+        tmdb: Boolean(env?.TMDB_API_KEY),
+        google: Boolean(env?.GOOGLE_CSE_KEY && env?.GOOGLE_CSE_CX),
       },
       errors: sourceErrors,
     };
@@ -234,6 +255,99 @@ async function fetchRelatedShowImages(malId) {
     }
     return images;
   } catch {
+    return [];
+  }
+}
+
+// TMDB carries the official promotional artwork for anime series and films —
+// posters and wide backdrops, the pieces that actually carry the show's
+// title/logo. Free API key, open to anyone, no card, and its CDN allows
+// hotlinking, unlike most search-engine results. Skipped when unconfigured.
+async function fetchTmdbImages(query, page, env) {
+  const key = env?.TMDB_API_KEY;
+  if (!key || !query) return [];
+
+  try {
+    const search = async (kind) => {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/search/${kind}?api_key=${key}&query=${encodeURIComponent(query)}`
+      );
+      if (!res.ok) throw new Error(`TMDB HTTP ${res.status}`);
+      const data = await res.json();
+      return (data.results || []).slice(0, 2).map((r) => ({ kind, id: r.id }));
+    };
+
+    const hits = [...(await search("tv")), ...(await search("movie"))];
+    if (hits.length === 0) return [];
+
+    const perEntry = await Promise.all(
+      hits.map(async ({ kind, id }) => {
+        try {
+          const res = await fetch(`https://api.themoviedb.org/3/${kind}/${id}/images?api_key=${key}`);
+          if (!res.ok) return [];
+          const data = await res.json();
+          // Backdrops are the wide key visuals; posters carry the title.
+          const files = [
+            ...(data.posters || []).map((p) => p.file_path),
+            ...(data.backdrops || []).map((b) => b.file_path),
+          ].filter(Boolean);
+          return files.map((f) => `https://image.tmdb.org/t/p/original${f}`);
+        } catch {
+          return [];
+        }
+      })
+    );
+
+    // Page through the flattened result rather than re-querying TMDB.
+    const all = [...new Set(perEntry.flat())];
+    const size = 12;
+    return all.slice((page - 1) * size, page * size);
+  } catch (err) {
+    sourceErrors.tmdb = err.message || String(err);
+    return [];
+  }
+}
+
+// Real Google image search, which is what the user would do by hand. The
+// free tier allows 100 queries a day, so one request per page is fetched
+// (10 images each) rather than paging aggressively. Both credentials live
+// as Cloudflare secrets; without them this source is simply skipped.
+// NOTE: Google closed this API to new customers in 2025 and shuts it down
+// entirely on 2027-01-01, so it only helps accounts that already had a key.
+async function fetchGoogleImages(query, page, env) {
+  const key = env?.GOOGLE_CSE_KEY;
+  const cx = env?.GOOGLE_CSE_CX;
+  if (!key || !cx || !query) return [];
+
+  try {
+    // Biasing the query towards official art gives far better results than
+    // the bare title, which pulls in merchandise and fan edits.
+    const q = `${query} anime key visual poster`;
+    const start = (page - 1) * 10 + 1;
+    if (start > 91) return []; // Google refuses start > 91
+
+    const url =
+      `https://www.googleapis.com/customsearch/v1?key=${key}&cx=${cx}` +
+      `&q=${encodeURIComponent(q)}&searchType=image&num=10&start=${start}` +
+      `&safe=active&imgSize=large`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      const body = await res.text();
+      // Quota exhaustion is the common case and shouldn't look like a bug.
+      throw new Error(
+        res.status === 429 || body.includes("quotaExceeded")
+          ? "quota Google épuisé pour aujourd'hui"
+          : `Google HTTP ${res.status}`
+      );
+    }
+
+    const data = await res.json();
+    return (data.items || [])
+      .map((item) => item.link)
+      .filter((link) => typeof link === "string" && /^https:\/\//.test(link));
+  } catch (err) {
+    sourceErrors.google = err.message || String(err);
     return [];
   }
 }
