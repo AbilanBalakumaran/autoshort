@@ -36,7 +36,7 @@ export async function onRequestPost({ request, env }) {
   // finds exactly what the user would find by googling the show's name —
   // key visuals and news art carrying the title — which the structured
   // databases don't always have. Skipped silently when not set up.
-  const [malImages, aniListImages, kitsuImages, malMangaImages, googleImages, tmdbImages] =
+  const [malImages, aniListImages, kitsuImages, malMangaImages, googleImages, tmdbImages, tavilyImages] =
     await Promise.all([
       fetchRealShowImages(query, page),
       fetchAniListImages(query),
@@ -44,10 +44,12 @@ export async function onRequestPost({ request, env }) {
       fetchMalMangaImages(query, page),
       fetchGoogleImages(query, page, env),
       fetchTmdbImages(query, page, env),
+      fetchTavilyImages(query, page, env),
     ]);
 
   // Title-bearing promotional art leads the grid.
   let images = interleave([
+    tavilyImages,
     googleImages,
     tmdbImages,
     malImages,
@@ -77,6 +79,7 @@ export async function onRequestPost({ request, env }) {
   if (debug) {
     payload.debug = {
       counts: {
+        tavily: tavilyImages.length,
         tmdb: tmdbImages.length,
         google: googleImages.length,
         mal: malImages.length,
@@ -85,6 +88,7 @@ export async function onRequestPost({ request, env }) {
         malManga: malMangaImages.length,
       },
       configured: {
+        tavily: Boolean(env?.TAVILY_API_KEY),
         tmdb: Boolean(env?.TMDB_API_KEY),
         google: Boolean(env?.GOOGLE_CSE_KEY && env?.GOOGLE_CSE_CX),
       },
@@ -255,6 +259,62 @@ async function fetchRelatedShowImages(malId) {
     }
     return images;
   } catch {
+    return [];
+  }
+}
+
+// Tavily is a web search built for AI agents; with include_images it returns
+// the pictures found on the pages it matched — i.e. roughly what a manual
+// Google search would surface, including news-site key visuals. Free tier is
+// 1000 credits/month with no card. Skipped silently when unconfigured.
+//
+// It has no page parameter, so each regeneration varies the wording instead;
+// that genuinely changes the result set rather than re-returning the same
+// images with a different offset.
+const TAVILY_ANGLES = [
+  "anime key visual official",
+  "anime poster official art",
+  "anime promotional artwork",
+  "anime scene screenshot",
+  "anime characters art",
+];
+
+async function fetchTavilyImages(query, page, env) {
+  const key = env?.TAVILY_API_KEY;
+  if (!key || !query) return [];
+
+  try {
+    const angle = TAVILY_ANGLES[(page - 1) % TAVILY_ANGLES.length];
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        query: `${query} ${angle}`,
+        include_images: true,
+        include_answer: false,
+        search_depth: "basic",
+        max_results: 8,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(
+        res.status === 401 ? "clé Tavily refusée" : `Tavily HTTP ${res.status} ${body.slice(0, 80)}`
+      );
+    }
+
+    const data = await res.json();
+    // `images` is either a list of URLs or of { url, description } objects
+    // depending on the options used — handle both.
+    return (data.images || [])
+      .map((img) => (typeof img === "string" ? img : img?.url))
+      .filter((u) => typeof u === "string" && /^https:\/\//.test(u));
+  } catch (err) {
+    sourceErrors.tavily = err.message || String(err);
     return [];
   }
 }
