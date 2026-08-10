@@ -694,6 +694,31 @@ confirmImagesBtn.addEventListener("click", () => {
 
 continueToImagesBtn.addEventListener("click", goToImageStep);
 
+// On iOS a plain <a download> drops the file into Files, so saving to the
+// camera roll takes several extra taps. The native share sheet offers
+// "Enregistrer la vidéo" straight away, so use it whenever it's available
+// and fall back to the normal download everywhere else.
+async function saveVideoToDevice(blob, filename, statusEl) {
+  const file = new File([blob], filename, { type: blob.type || "video/mp4" });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return true;
+    } catch (err) {
+      // AbortError just means the user dismissed the sheet — not a failure.
+      if (err?.name === "AbortError") return true;
+      if (statusEl) statusEl.textContent = `Partage indisponible (${err.message}) — téléchargement classique.`;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return false;
+}
+
 montageBtn.addEventListener("click", generateMontage);
 
 // The copy buttons are gone — clicking the text zone itself copies, with a
@@ -1208,8 +1233,13 @@ async function generateMontage() {
     log(`Vidéo assemblée (${recording.blob.size} octets, ${recording.isMp4 ? "mp4" : "webm"})`);
 
     montagePreview.src = URL.createObjectURL(recording.blob);
+    const videoName = recording.isMp4 ? "sukiamv.mp4" : "sukiamv.webm";
     montageDownload.href = URL.createObjectURL(recording.blob);
-    montageDownload.download = recording.isMp4 ? "sukishort.mp4" : "sukishort.webm";
+    montageDownload.download = videoName;
+    montageDownload.onclick = (e) => {
+      e.preventDefault();
+      saveVideoToDevice(recording.blob, videoName, status);
+    };
     montageResult.hidden = false;
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
@@ -1217,19 +1247,15 @@ async function generateMontage() {
     const metadata = await generateMetadata();
 
     const thumbnailTitle = metadata?.titles?.[0] || currentShowName || currentVoiceScript.slice(0, 40);
+    // A single 9:16 cover for every platform — TikTok, Reels and Shorts all
+    // accept it, and one version keeps the panel short.
     const thumbnail = generateThumbnail(images[0], thumbnailTitle, montageCanvas.width, montageCanvas.height);
-    // TikTok's cover picker works from a 1080x1350 frame, so ship a second
-    // render at that exact size rather than letting the app crop the 9:16 one.
-    const thumbnailTikTok = generateThumbnail(
-      images[0], thumbnailTitle, TIKTOK_THUMBNAIL_SIZE.width, TIKTOK_THUMBNAIL_SIZE.height
-    );
 
     const historyId = await saveToHistory({
       voiceScript: currentVoiceScript,
       videoBlob: recording.blob,
       videoExt: recording.isMp4 ? "mp4" : "webm",
       thumbnail,
-      thumbnailTikTok,
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
       titles: metadata?.titles || [],
       description: metadata?.description || "",
@@ -1243,7 +1269,6 @@ async function generateMontage() {
       videoBlob: recording.blob,
       videoExt: recording.isMp4 ? "mp4" : "webm",
       thumbnail,
-      thumbnailTikTok,
       titles: metadata?.titles || [],
       description: metadata?.description || "",
       tags: metadata?.tags || "",
@@ -1341,9 +1366,10 @@ function drawMontageFrameAt(ctx, images, t, durationMs, subtitleWords, timingsMs
 
   // Same branding as the thumbnail so the video and its cover read as one
   // piece: SukiAMV pill top-left and the red bar along the bottom.
-  drawBrandBadge(ctx, w / THUMBNAIL_REFERENCE_WIDTH);
+  const s = w / THUMBNAIL_REFERENCE_WIDTH;
+  drawBrandBadge(ctx, s);
   ctx.fillStyle = "#E63946";
-  ctx.fillRect(0, h - 12, w, 12);
+  ctx.fillRect(0, h - 12 * s, w, 12 * s);
 }
 
 async function renderMontage(images, audioBuffer, subtitleText, wordTimings) {
@@ -1405,6 +1431,13 @@ async function renderMontageWebCodecs(images, audioBuffer, subtitleText, wordTim
   const { words: subtitleWords, timingsMs } = prepareSubtitles(subtitleText, wordTimings);
 
   const videoConfig = await pickVideoCodec(width, height);
+
+  // ElevenLabs returns 24 kHz audio. That's a legal AAC rate but an unusual
+  // one, and several mobile players (TikTok's in particular) stutter or
+  // refuse it. Resampling to the standard 48 kHz stereo removes the whole
+  // class of problem.
+  audioBuffer = await resampleAudio(audioBuffer, 48000, 2);
+
   const numberOfChannels = Math.min(2, audioBuffer.numberOfChannels);
   const audioConfig = {
     codec: "mp4a.40.2",
@@ -1473,6 +1506,24 @@ async function renderMontageWebCodecs(images, audioBuffer, subtitleText, wordTim
 
   const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
   return { blob, isMp4: true };
+}
+
+async function resampleAudio(audioBuffer, targetRate, targetChannels) {
+  if (audioBuffer.sampleRate === targetRate && audioBuffer.numberOfChannels === targetChannels) {
+    return audioBuffer;
+  }
+  try {
+    const frames = Math.ceil(audioBuffer.duration * targetRate);
+    const offline = new OfflineAudioContext(targetChannels, frames, targetRate);
+    const src = offline.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(offline.destination);
+    src.start();
+    return await offline.startRendering();
+  } catch (err) {
+    log(`Rééchantillonnage audio impossible (${err.message}) — piste d'origine conservée`);
+    return audioBuffer;
+  }
 }
 
 async function encodeAudioTrack(audioEncoder, audioBuffer, numberOfChannels) {
@@ -1716,7 +1767,9 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
   const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
   const scale = bounceEaseOut(bounceProgress);
 
-  const fontSize = 45;
+  // Scaled from the 540px reference the styling was authored against, so
+  // the subtitles keep their proportions now that the canvas is 1080 wide.
+  const fontSize = 45 * (canvasW / THUMBNAIL_REFERENCE_WIDTH);
   ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -1765,7 +1818,6 @@ function bounceEaseOut(t) {
 // from there, so the same composition holds at any output size (the 9:16
 // video thumbnail and the 1080x1350 TikTok cover).
 const THUMBNAIL_REFERENCE_WIDTH = 540;
-const TIKTOK_THUMBNAIL_SIZE = { width: 1080, height: 1350 };
 
 function generateThumbnail(img, titleText, canvasW, canvasH) {
   const canvas = document.createElement("canvas");
@@ -1810,7 +1862,9 @@ function drawBrandBadge(ctx, s = 1) {
   // their own UI and round the corners of the frame, so a badge tight to the
   // edge gets clipped or hidden once published.
   const x = 52 * s;
-  const y = 60 * s;
+  // Sits well below the top edge: on the video it was crowding the top of
+  // the frame, and social players overlay their own UI up there.
+  const y = 104 * s;
   const padX = 16 * s;
   const h = 44 * s;
 
@@ -2116,7 +2170,7 @@ async function schedulePost({ platform, item, title, caption, publishNow, when }
   }
 
   const videoUrl = await uploadMedia(item.videoBlob, "video/mp4");
-  const coverSource = platform === "tiktok" && item.thumbnailTikTok ? item.thumbnailTikTok : item.thumbnail;
+  const coverSource = item.thumbnail;
   const coverUrl = coverSource ? await uploadMedia(coverSource, "image/jpeg") : null;
 
   const input = {
@@ -2158,8 +2212,6 @@ function openPublishPanel(item, host) {
   const node = document.getElementById("publish-template").content.cloneNode(true);
   const panel = node.querySelector(".publish-panel");
 
-  const titleInput = panel.querySelector(".publish-title");
-  const captionInput = panel.querySelector(".publish-caption");
   const cover = panel.querySelector(".publish-cover");
   const coverDownload = panel.querySelector(".publish-cover-download");
   const seoTitles = panel.querySelector(".publish-titles");
@@ -2172,30 +2224,24 @@ function openPublishPanel(item, host) {
   const statusEl = panel.querySelector(".publish-status");
   const tabs = [...panel.querySelectorAll(".platform-tab")];
 
+  // The tabs now only pick where to publish — the caption and cover are the
+  // same everywhere, which keeps the panel short instead of duplicating the
+  // same fields three times.
   let platform = "tiktok";
-  let loadedOnce = false;
-  // Per-platform edits are kept so switching tabs back and forth doesn't
-  // wipe what the user just typed.
-  const drafts = {};
 
   function loadPlatform(next) {
-    // Skipped on the very first call: the inputs are still empty then, and
-    // storing that as a draft would blank out the pre-filled values.
-    if (loadedOnce) drafts[platform] = { title: titleInput.value, caption: captionInput.value };
-    loadedOnce = true;
     platform = next;
     tabs.forEach((t) => t.classList.toggle("active", t.dataset.platform === platform));
-    const draft = drafts[platform];
-    titleInput.value = draft ? draft.title : buildPostTitle(item);
-    captionInput.value = draft ? draft.caption : buildCaption(platform, item);
-    // TikTok's cover picker uses a 4:5 frame; the others use the 9:16 one.
-    const coverSrc = platform === "tiktok" && item.thumbnailTikTok ? item.thumbnailTikTok : item.thumbnail;
-    cover.src = coverSrc || "";
-    cover.hidden = !coverSrc;
-    coverDownload.href = coverSrc || "";
-    coverDownload.hidden = !coverSrc;
-    coverDownload.download = platform === "tiktok" ? "sukiamv-miniature-tiktok.jpg" : "sukiamv-miniature.jpg";
   }
+
+  // One single cover for every platform.
+  const coverSrc = item.thumbnail || "";
+  cover.src = coverSrc;
+  cover.hidden = !coverSrc;
+  coverDownload.href = coverSrc;
+  coverDownload.hidden = !coverSrc;
+  // Without this the button rendered as an empty red bar.
+  coverDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
 
   // Every SEO field copies on click, no buttons.
   seoDescription.value = item.description || "";
@@ -2244,8 +2290,8 @@ function openPublishPanel(item, host) {
     try {
       const post = await schedulePost({
         platform, item,
-        title: titleInput.value.trim(),
-        caption: captionInput.value.trim(),
+        title: buildPostTitle(item),
+        caption: buildCaption(platform, item),
         publishNow, when,
       });
       if (!publishNow) bookDay(dayStr);
@@ -2350,7 +2396,7 @@ function openHistoryDb() {
   });
 }
 
-async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thumbnailTikTok, title, titles, description, tags }) {
+async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title, titles, description, tags }) {
   try {
     const db = await openHistoryDb();
     const tx = db.transaction(HISTORY_STORE, "readwrite");
@@ -2363,7 +2409,6 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thum
       videoBlob,
       videoExt,
       thumbnail,
-      thumbnailTikTok: thumbnailTikTok || "",
       date: Date.now(),
     });
     const id = await new Promise((resolve, reject) => {
@@ -2414,8 +2459,13 @@ function openHistoryDetail(item) {
   historyDetail.hidden = false;
 
   historyDetailVideo.src = URL.createObjectURL(item.videoBlob);
+  const historyVideoName = `sukiamv.${item.videoExt}`;
   historyDetailDownload.href = URL.createObjectURL(item.videoBlob);
-  historyDetailDownload.download = `sukishort.${item.videoExt}`;
+  historyDetailDownload.download = historyVideoName;
+  historyDetailDownload.onclick = (e) => {
+    e.preventDefault();
+    saveVideoToDevice(item.videoBlob, historyVideoName, historyStatus);
+  };
 
   // The SEO fiche, covers and scheduling all live in the publishing panel —
   // same panel as right after generation, so an old project can be scheduled

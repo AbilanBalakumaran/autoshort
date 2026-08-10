@@ -109,7 +109,7 @@
 
         <pre id="debug-log" hidden></pre>
 
-        <canvas id="montage-canvas" width="540" height="960" hidden></canvas>
+        <canvas id="montage-canvas" width="1080" height="1920" hidden></canvas>
 
         <div id="montage-result" hidden>
           <video id="montage-preview" controls playsinline></video>
@@ -244,7 +244,7 @@
   <template id="publish-template">
     <section class="publish-panel">
       <h3>Publier</h3>
-      <p class="hint publish-intro">Programme la publication sans télécharger la vidéo. La couverture générée est utilisée automatiquement.</p>
+      <p class="hint publish-intro">Choisis où publier, puis programme — sans télécharger la vidéo. La miniature générée sert de couverture.</p>
 
       <div class="platform-tabs">
         <button type="button" class="platform-tab active" data-platform="tiktok">TikTok</button>
@@ -252,13 +252,7 @@
         <button type="button" class="platform-tab" data-platform="youtube">YouTube</button>
       </div>
 
-      <label>Titre <span class="copy-hint">(différent de la miniature)</span></label>
-      <input type="text" class="publish-title" />
-
-      <label>Légende</label>
-      <textarea class="publish-caption"></textarea>
-
-      <label>Image de couverture <span class="copy-hint">(générée automatiquement)</span></label>
+      <label>Miniature <span class="copy-hint">(utilisée comme couverture)</span></label>
       <img class="publish-cover thumbnail-preview" alt="" />
       <a class="publish-cover-download download-link icon-btn" download="sukiamv-miniature.jpg"></a>
 
