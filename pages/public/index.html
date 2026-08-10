@@ -113,8 +113,15 @@
 
         <div id="montage-result" hidden>
           <video id="montage-preview" controls playsinline></video>
-          <a id="montage-download" class="download-link icon-btn" download="sukishort.mp4"></a>
+          <a id="montage-download" class="download-link icon-btn" download="sukiamv.mp4"></a>
         </div>
+
+        <section id="thumbnail-step" hidden>
+          <h3>Miniature</h3>
+          <p class="hint">Choisis l'image de couverture, puis génère la miniature. Elle servira aussi de couverture à la publication.</p>
+          <div id="cover-choices" class="image-grid"></div>
+          <button type="button" id="generate-thumbnail-btn" class="icon-btn"></button>
+        </section>
 
         <div id="publish-panel" class="publish-host"></div>
       </section>
@@ -248,8 +255,7 @@
 
       <div class="platform-tabs">
         <button type="button" class="platform-tab active" data-platform="tiktok">TikTok</button>
-        <button type="button" class="platform-tab" data-platform="instagram">Instagram</button>
-        <button type="button" class="platform-tab" data-platform="youtube">YouTube</button>
+        <button type="button" class="platform-tab" data-platform="youtube-instagram">YouTube &amp; Instagram</button>
       </div>
 
       <label>Miniature <span class="copy-hint">(utilisée comme couverture)</span></label>

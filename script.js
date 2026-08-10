@@ -11,10 +11,17 @@ const PUBLISH_NOW_STORAGE_KEY = "sukishort-publish-now";
 const BOOKED_DAYS_STORAGE_KEY = "sukishort-booked-days";
 const DEFAULT_PUBLISH_TIME = "06:40";
 
+// YouTube and Instagram are merged into one target: they take the same
+// vertical cover and the same caption style, so splitting them only made
+// the user do the job twice. Selecting it publishes to both channels.
 const PLATFORMS = {
-  tiktok: { label: "TikTok", service: "tiktok", maxCaption: 2200 },
-  instagram: { label: "Instagram", service: "instagram", maxCaption: 2200 },
-  youtube: { label: "YouTube", service: "youtube", maxCaption: 5000 },
+  tiktok: { label: "TikTok", services: ["tiktok"], maxCaption: 2200, hashtags: 6 },
+  "youtube-instagram": {
+    label: "YouTube & Instagram",
+    services: ["youtube", "instagram"],
+    maxCaption: 2200,
+    hashtags: 12,
+  },
 };
 const DEFAULT_DURATION = 16;
 const WORDS_PER_SECOND = 35 / 16;
@@ -90,6 +97,9 @@ const timelineList = document.getElementById("timeline-list");
 // The SEO fiche and the thumbnails now live inside the publishing panel
 // (built from #publish-template), so there are no page-level elements for
 // them any more — openPublishPanel() owns that markup.
+const thumbnailStep = document.getElementById("thumbnail-step");
+const coverChoices = document.getElementById("cover-choices");
+const generateThumbnailBtn = document.getElementById("generate-thumbnail-btn");
 const publishPanel = document.getElementById("publish-panel");
 const historyPublishPanel = document.getElementById("history-publish-panel");
 const bufferKeyInput = document.getElementById("buffer-key-input");
@@ -298,6 +308,7 @@ function initButtons() {
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
   montageDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
   historyDetailDownload.innerHTML = iconLabel("download", "Télécharger la vidéo");
+  generateThumbnailBtn.innerHTML = iconLabel("film", "Générer la miniature");
   articleBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
   articleGenerateBtn.innerHTML = iconLabel("film", "Générer en short");
   historyBackBtn.innerHTML = `<span class="icon">${ICONS.back}</span><span>Retour</span>`;
@@ -547,6 +558,8 @@ clearBtn.addEventListener("click", () => {
   timelineList.innerHTML = "";
   montageBtn.hidden = true;
   montageResult.hidden = true;
+  thumbnailStep.hidden = true;
+  currentProject = null;
   publishPanel.innerHTML = "";
   updateConfirmLabel();
   promptInput.focus();
@@ -567,6 +580,8 @@ form.addEventListener("submit", async (e) => {
   imageStep.hidden = true;
   montageBtn.hidden = true;
   montageResult.hidden = true;
+  thumbnailStep.hidden = true;
+  currentProject = null;
   publishPanel.innerHTML = "";
   selectedImages = [];
   imagePool = [];
@@ -693,13 +708,14 @@ confirmImagesBtn.addEventListener("click", () => {
 });
 
 continueToImagesBtn.addEventListener("click", goToImageStep);
+generateThumbnailBtn.addEventListener("click", generateProjectThumbnail);
 
 // On iOS a plain <a download> drops the file into Files, so saving to the
 // camera roll takes several extra taps. The native share sheet offers
 // "Enregistrer la vidéo" straight away, so use it whenever it's available
 // and fall back to the normal download everywhere else.
-async function saveVideoToDevice(blob, filename, statusEl) {
-  const file = new File([blob], filename, { type: blob.type || "video/mp4" });
+async function saveMediaToDevice(blob, filename, statusEl) {
+  const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
@@ -898,7 +914,39 @@ async function fetchImageBatch(stylePrompt, searchQuery, page) {
   }
 
   const aniListImages = await aniListPromise;
-  return { images: [...new Set([...backendImages, ...aniListImages])], backendError };
+  let images = [...new Set([...backendImages, ...aniListImages])];
+  images = rankLikeSelection(images);
+  return { images, backendError };
+}
+
+// The URL alone says what an image is, because each source uses a stable
+// path shape. Good enough to tell key art from cast portraits and scene
+// stills, which is what makes a regeneration feel consistent.
+function classifyImageKind(url) {
+  const u = url.toLowerCase();
+  if (u.includes("/character/") || u.includes("/characters/")) return "portrait";
+  if (u.includes("/banner/") || u.includes("cover_image")) return "banner";
+  if (u.includes("crunchyroll") || u.includes("/episode") || u.includes("spire")) return "still";
+  if (u.includes("poster_image") || u.includes("/cover/") || u.includes("cdn.myanimelist.net/images/anime/"))
+    return "cover";
+  return "other";
+}
+
+// On a regeneration, put images of the same kinds the user already picked
+// first, so "Régénérer" extends their choice instead of drifting to a
+// different style of picture.
+function rankLikeSelection(images) {
+  if (selectedImages.length === 0) return images;
+
+  const preferred = new Set(selectedImages.map(classifyImageKind));
+  if (preferred.size === 0) return images;
+
+  const matching = [];
+  const rest = [];
+  for (const url of images) {
+    (preferred.has(classifyImageKind(url)) ? matching : rest).push(url);
+  }
+  return [...matching, ...rest];
 }
 
 // Queried straight from the browser because AniList 403s Cloudflare-origin
@@ -1015,31 +1063,33 @@ function addImageCard(src) {
 
   const badge = document.createElement("span");
   badge.className = "image-check";
-  badge.textContent = "✓";
 
   card.appendChild(img);
   card.appendChild(badge);
 
   card.addEventListener("click", () => {
     const i = selectedImages.indexOf(src);
-    if (i !== -1) {
-      selectedImages.splice(i, 1);
-      card.classList.remove("selected");
-    } else {
-      selectedImages.push(src);
-      card.classList.add("selected");
-    }
+    if (i !== -1) selectedImages.splice(i, 1);
+    else selectedImages.push(src);
+    // Every badge is renumbered, not just this one: deselecting an image
+    // shifts the order of everything picked after it.
+    syncGridSelection();
     updateConfirmLabel();
     if (!timelineStep.hidden) renderTimeline();
   });
 
   imageGrid.appendChild(card);
+  syncGridSelection();
 }
 
 function syncGridSelection() {
   imageGrid.querySelectorAll(".image-card").forEach((card) => {
-    const src = card.querySelector("img").src;
-    card.classList.toggle("selected", selectedImages.includes(src));
+    const img = card.querySelector("img");
+    if (!img) return; // the "+" upload tile has no image
+    const index = selectedImages.indexOf(img.src);
+    card.classList.toggle("selected", index !== -1);
+    const badge = card.querySelector(".image-check");
+    if (badge) badge.textContent = index === -1 ? "" : String(index + 1);
   });
 }
 
@@ -1238,7 +1288,7 @@ async function generateMontage() {
     montageDownload.download = videoName;
     montageDownload.onclick = (e) => {
       e.preventDefault();
-      saveVideoToDevice(recording.blob, videoName, status);
+      saveMediaToDevice(recording.blob, videoName, status);
     };
     montageResult.hidden = false;
     montageResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1246,33 +1296,35 @@ async function generateMontage() {
     status.textContent = "Génération de la fiche technique...";
     const metadata = await generateMetadata();
 
-    const thumbnailTitle = metadata?.titles?.[0] || currentShowName || currentVoiceScript.slice(0, 40);
-    // A single 9:16 cover for every platform — TikTok, Reels and Shorts all
-    // accept it, and one version keeps the panel short.
-    const thumbnail = generateThumbnail(images[0], thumbnailTitle, montageCanvas.width, montageCanvas.height);
-
     const historyId = await saveToHistory({
       voiceScript: currentVoiceScript,
       videoBlob: recording.blob,
       videoExt: recording.isMp4 ? "mp4" : "webm",
-      thumbnail,
+      // Provisional cover: the raw first image, so the history entry is never
+      // blank. Replaced by the styled miniature once the user generates it.
+      thumbnail: selectedImages[0] || "",
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
       titles: metadata?.titles || [],
       description: metadata?.description || "",
       tags: metadata?.tags || "",
     });
 
-    // Feed the publishing panel (platform tabs + Buffer scheduling) with
-    // everything it needs, so the user never has to download and re-upload.
-    openPublishPanel({
+    // The thumbnail is deliberately NOT generated here: the user picks its
+    // cover image and triggers it separately, so video and miniature stay
+    // under separate control.
+    currentProject = {
       id: historyId,
       videoBlob: recording.blob,
       videoExt: recording.isMp4 ? "mp4" : "webm",
-      thumbnail,
+      thumbnail: "",
+      thumbnailTitle: metadata?.titles?.[0] || currentShowName || currentVoiceScript.slice(0, 40),
+      loadedImages: images,
       titles: metadata?.titles || [],
       description: metadata?.description || "",
       tags: metadata?.tags || "",
-    }, publishPanel);
+    };
+    showThumbnailStep();
+    openPublishPanel(currentProject, publishPanel);
 
     log("Terminé");
     status.textContent = "";
@@ -1283,6 +1335,65 @@ async function generateMontage() {
     if (err?.stack) log(err.stack);
   } finally {
     montageBtn.disabled = false;
+  }
+}
+
+// Holds the project produced by the last montage, so the thumbnail step and
+// the publishing panel can both work on it after the video is done.
+let currentProject = null;
+let coverImageIndex = 0;
+
+function showThumbnailStep() {
+  coverImageIndex = 0;
+  renderCoverChoices();
+  thumbnailStep.hidden = false;
+}
+
+function renderCoverChoices() {
+  coverChoices.innerHTML = "";
+  (currentProject?.loadedImages || []).forEach((img, index) => {
+    const card = document.createElement("div");
+    card.className = "image-card" + (index === coverImageIndex ? " selected" : "");
+
+    const thumb = document.createElement("img");
+    thumb.src = img.src;
+    thumb.alt = "";
+    thumb.loading = "lazy";
+
+    const badge = document.createElement("span");
+    badge.className = "image-check";
+    badge.textContent = index === coverImageIndex ? "✓" : "";
+
+    card.append(thumb, badge);
+    card.addEventListener("click", () => {
+      coverImageIndex = index;
+      renderCoverChoices();
+    });
+    coverChoices.appendChild(card);
+  });
+}
+
+async function generateProjectThumbnail() {
+  if (!currentProject) return;
+  generateThumbnailBtn.disabled = true;
+  status.textContent = "Génération de la miniature...";
+  try {
+    await document.fonts.load('700 90px "Obelix Pro"');
+    const source = currentProject.loadedImages[coverImageIndex] || currentProject.loadedImages[0];
+    const thumbnail = generateThumbnail(
+      source, currentProject.thumbnailTitle, montageCanvas.width, montageCanvas.height
+    );
+
+    currentProject.thumbnail = thumbnail;
+    await updateHistoryThumbnail(currentProject.id, thumbnail);
+    // Re-render the publishing panel so it shows the new cover.
+    openPublishPanel(currentProject, publishPanel);
+    status.textContent = "Miniature générée — elle sert de couverture à la publication.";
+    publishPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    status.textContent = `Erreur miniature : ${err.message}`;
+  } finally {
+    generateThumbnailBtn.disabled = false;
   }
 }
 
@@ -2098,14 +2209,10 @@ function buildCaption(platform, item) {
     .map((t) => t.trim().replace(/^#/, ""))
     .filter(Boolean);
 
-  if (platform === "youtube") {
-    // YouTube keeps tags out of the visible description.
-    return description.slice(0, PLATFORMS.youtube.maxCaption);
-  }
-
-  const hashtags = tags.slice(0, platform === "tiktok" ? 6 : 12).map((t) => `#${t.replace(/\s+/g, "")}`);
+  const config = PLATFORMS[platform];
+  const hashtags = tags.slice(0, config.hashtags).map((t) => `#${t.replace(/\s+/g, "")}`);
   const text = [description, hashtags.join(" ")].filter(Boolean).join("\n\n");
-  return text.slice(0, PLATFORMS[platform].maxCaption);
+  return text.slice(0, config.maxCaption);
 }
 
 // The thumbnail already shows titles[0], so the post headline uses the next
@@ -2159,9 +2266,9 @@ async function uploadMedia(blobOrDataUrl, contentType) {
 
 async function schedulePost({ platform, item, title, caption, publishNow, when }) {
   const channels = await fetchBufferChannels();
-  const service = PLATFORMS[platform].service;
-  const channel = channels.find((c) => (c.service || "").toLowerCase() === service);
-  if (!channel) {
+  const wanted = PLATFORMS[platform].services;
+  const targets = channels.filter((c) => wanted.includes((c.service || "").toLowerCase()));
+  if (targets.length === 0) {
     throw new Error(
       `Aucun compte ${PLATFORMS[platform].label} connecté sur Buffer (comptes trouvés : ${
         channels.map((c) => c.service).join(", ") || "aucun"
@@ -2169,41 +2276,46 @@ async function schedulePost({ platform, item, title, caption, publishNow, when }
     );
   }
 
+  // Uploaded once and reused for every target channel.
   const videoUrl = await uploadMedia(item.videoBlob, "video/mp4");
-  const coverSource = item.thumbnail;
-  const coverUrl = coverSource ? await uploadMedia(coverSource, "image/jpeg") : null;
+  const coverUrl = item.thumbnail ? await uploadMedia(item.thumbnail, "image/jpeg") : null;
 
-  const input = {
-    channelId: channel.id,
-    text: caption,
-    schedulingType: "automatic",
-    mode: publishNow ? "shareNow" : "customScheduled",
-    assets: [
-      {
-        video: {
-          url: videoUrl,
-          ...(coverUrl ? { thumbnailUrl: coverUrl } : {}),
-          metadata: { title },
+  const posts = [];
+  for (const channel of targets) {
+    const input = {
+      channelId: channel.id,
+      text: caption,
+      schedulingType: "automatic",
+      mode: publishNow ? "shareNow" : "customScheduled",
+      assets: [
+        {
+          video: {
+            url: videoUrl,
+            ...(coverUrl ? { thumbnailUrl: coverUrl } : {}),
+            metadata: { title },
+          },
         },
-      },
-    ],
-  };
-  if (!publishNow) input.dueAt = when.toISOString();
+      ],
+    };
+    if (!publishNow) input.dueAt = when.toISOString();
 
-  const result = await bufferGraphql(
-    `mutation ($input: CreatePostInput!) {
-      createPost(input: $input) {
-        ... on PostActionSuccess { post { id dueAt } }
-        ... on MutationError { message }
-      }
-    }`,
-    { input }
-  );
+    const result = await bufferGraphql(
+      `mutation ($input: CreatePostInput!) {
+        createPost(input: $input) {
+          ... on PostActionSuccess { post { id dueAt } }
+          ... on MutationError { message }
+        }
+      }`,
+      { input }
+    );
 
-  const payload = result?.createPost;
-  if (payload?.message) throw new Error(payload.message);
-  if (!payload?.post?.id) throw new Error("Buffer n'a pas confirmé la création du post.");
-  return payload.post;
+    const payload = result?.createPost;
+    if (payload?.message) throw new Error(`${channel.service} : ${payload.message}`);
+    if (!payload?.post?.id) throw new Error(`${channel.service} : Buffer n'a pas confirmé la création du post.`);
+    posts.push({ ...payload.post, service: channel.service });
+  }
+
+  return posts;
 }
 
 function openPublishPanel(item, host) {
@@ -2242,6 +2354,14 @@ function openPublishPanel(item, host) {
   coverDownload.hidden = !coverSrc;
   // Without this the button rendered as an empty red bar.
   coverDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
+  // Same behaviour as the video button: native share sheet on iOS so the
+  // image lands in Photos rather than in Files.
+  coverDownload.onclick = async (e) => {
+    if (!coverSrc) return;
+    e.preventDefault();
+    const blob = await (await fetch(coverSrc)).blob();
+    saveMediaToDevice(blob, "sukiamv-miniature.jpg", statusEl);
+  };
 
   // Every SEO field copies on click, no buttons.
   seoDescription.value = item.description || "";
@@ -2288,16 +2408,17 @@ function openPublishPanel(item, host) {
       : `Programmation sur ${PLATFORMS[platform].label}...`;
 
     try {
-      const post = await schedulePost({
+      const posts = await schedulePost({
         platform, item,
         title: buildPostTitle(item),
         caption: buildCaption(platform, item),
         publishNow, when,
       });
       if (!publishNow) bookDay(dayStr);
+      const where = posts.map((p) => p.service).join(" + ");
       statusEl.textContent = publishNow
-        ? `Publié sur ${PLATFORMS[platform].label} ✓`
-        : `Programmé sur ${PLATFORMS[platform].label} pour le ${new Date(post.dueAt || when).toLocaleString("fr-FR")} ✓`;
+        ? `Publié sur ${where} ✓`
+        : `Programmé sur ${where} pour le ${new Date(posts[0]?.dueAt || when).toLocaleString("fr-FR")} ✓`;
     } catch (err) {
       statusEl.textContent = `Échec : ${err.message}`;
     } finally {
@@ -2423,6 +2544,32 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, titl
   }
 }
 
+// Swaps in the styled miniature once it's generated, replacing the raw
+// placeholder cover saved right after the video.
+async function updateHistoryThumbnail(id, thumbnail) {
+  if (!id) return;
+  try {
+    const db = await openHistoryDb();
+    const tx = db.transaction(HISTORY_STORE, "readwrite");
+    const store = tx.objectStore(HISTORY_STORE);
+    const req = store.get(id);
+    await new Promise((resolve, reject) => {
+      req.onsuccess = () => {
+        if (req.result) store.put({ ...req.result, thumbnail });
+        resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    if (!document.getElementById("tab-history").hidden) renderHistory();
+  } catch (err) {
+    log(`Miniature non enregistrée dans l'historique : ${err.message || err}`);
+  }
+}
+
 async function getAllHistory() {
   const db = await openHistoryDb();
   return new Promise((resolve, reject) => {
@@ -2464,7 +2611,7 @@ function openHistoryDetail(item) {
   historyDetailDownload.download = historyVideoName;
   historyDetailDownload.onclick = (e) => {
     e.preventDefault();
-    saveVideoToDevice(item.videoBlob, historyVideoName, historyStatus);
+    saveMediaToDevice(item.videoBlob, historyVideoName, historyStatus);
   };
 
   // The SEO fiche, covers and scheduling all live in the publishing panel —

@@ -438,6 +438,12 @@ label {
   box-shadow: 0 0 24px rgba(230, 57, 70, 0.25);
 }
 
+/* Same full width as every other action button, centred under the player. */
+#continue-to-images-btn {
+  width: 100%;
+  margin: 14px auto 0;
+}
+
 .audio-label {
   display: block;
   margin-bottom: 8px;
@@ -515,19 +521,24 @@ label {
   box-shadow: 0 0 16px rgba(193, 18, 31, 0.5);
 }
 
+/* Shows the selection ORDER (1, 2, 3...) like the iOS photo picker, so the
+   count is readable at a glance instead of having to tally checkmarks. */
 .image-check {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 13px;
   background: linear-gradient(135deg, #E63946, #C1121F);
   display: none;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 700;
   color: white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
 .image-card.selected .image-check {
