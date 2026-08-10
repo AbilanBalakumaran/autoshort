@@ -8,6 +8,16 @@
   box-sizing: border-box;
 }
 
+/* Added by JS only when running as an installed app: kills double-tap zoom
+   and iOS's automatic text inflation, both of which break the app feel.
+   A normal browser tab keeps zooming, which matters for accessibility. */
+.no-zoom,
+.no-zoom body {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 /* Author rules like `.icon-btn { display: flex }` otherwise silently beat the
    browser's built-in `[hidden] { display: none }` rule, so anything with a
    class-based display value would stay visible even with hidden=true. */

@@ -189,6 +189,7 @@ initSuggestions();
 initHistory();
 initLogo();
 initServiceWorker();
+initNoZoomInStandalone();
 initNotifications();
 
 function initLogo() {
@@ -233,6 +234,9 @@ let isGenerating = false;
 
 async function notifyStep(title, body) {
   try {
+    // Only when the app isn't on screen: if the user is watching the page,
+    // the status line already tells them, and a banner on top of it is noise.
+    if (document.visibilityState === "visible") return;
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     const registration = await navigator.serviceWorker.getRegistration();
     if (!registration) return;
@@ -246,6 +250,42 @@ async function notifyStep(title, body) {
   } catch {
     // Notifications are a convenience — never let one break a generation.
   }
+}
+
+// Pinch/double-tap zoom breaks the "native app" feel once installed, but it
+// stays available in a normal browser tab where it's an accessibility
+// feature. iOS ignores user-scalable=no on the meta tag, so the gesture
+// events have to be blocked directly as well.
+function initNoZoomInStandalone() {
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  if (!standalone) return;
+
+  const viewport = document.querySelector('meta[name="viewport"]');
+  if (viewport) {
+    viewport.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    );
+  }
+  document.documentElement.classList.add("no-zoom");
+
+  // Safari-only pinch events.
+  ["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  });
+
+  // Double-tap to zoom: swallow the second tap when it lands within 300ms.
+  let lastTouch = 0;
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      const now = Date.now();
+      if (now - lastTouch <= 300) e.preventDefault();
+      lastTouch = now;
+    },
+    { passive: false }
+  );
 }
 
 function initServiceWorker() {
