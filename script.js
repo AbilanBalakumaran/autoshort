@@ -29,6 +29,8 @@ const WORDS_PER_SECOND = 35 / 16;
 const ICONS = {
   speaker:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>',
+  bell:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
   film:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><rect x="3" y="11" width="18" height="10" rx="2"/></svg>',
   folder:
@@ -297,8 +299,8 @@ async function initNotifications() {
 
 function updateNotificationsUi(subscribed) {
   notificationsBtn.innerHTML = subscribed
-    ? iconLabel("trashSmall", "Désactiver les notifications")
-    : iconLabel("speaker", "Activer les notifications");
+    ? iconLabel("bell", "Désactiver les notifications")
+    : iconLabel("bell", "Activer les notifications");
 }
 
 function initButtons() {
@@ -779,16 +781,26 @@ async function generateImages() {
   try {
     const poolSet = new Set(imagePool);
     const addCap = isRegen ? MAX_ADD_REGEN : MAX_ADD_FIRST;
+    // Tracked so the render step can surface this round's finds at the top.
+    const addedThisRound = new Set();
     let added = 0;
     let lastError = null;
 
+    const take = (url) => {
+      if (poolSet.has(url)) return false;
+      poolSet.add(url);
+      imagePool.push(url);
+      addedThisRound.add(url);
+      added++;
+      return true;
+    };
+
     const drainReserve = () => {
+      // Reserve leftovers get the same "looks like what you picked" ordering
+      // as fresh results, so a regeneration stays consistent either way.
+      imageReserve = rankLikeSelection(imageReserve);
       while (imageReserve.length > 0 && added < addCap && imagePool.length < IMAGE_POOL_CAP) {
-        const url = imageReserve.shift();
-        if (poolSet.has(url)) continue;
-        poolSet.add(url);
-        imagePool.push(url);
-        added++;
+        take(imageReserve.shift());
       }
     };
 
@@ -813,9 +825,7 @@ async function generateImages() {
         for (const url of images) {
           if (poolSet.has(url)) continue;
           if (added < addCap && imagePool.length < IMAGE_POOL_CAP) {
-            poolSet.add(url);
-            imagePool.push(url);
-            added++;
+            take(url);
           } else if (!imageReserve.includes(url)) {
             imageReserve.push(url);
           }
@@ -848,9 +858,18 @@ async function generateImages() {
 
     // Keep previously selected images visible so a "Régénérer" click doesn't lose picks.
     selectedImages.forEach((src) => addImageCard(src));
+
+    // Freshly found images go straight after the selection, NOT at the end of
+    // a 100-image grid: appending them at the bottom left the visible top of
+    // the grid unchanged, which made a working regeneration look like it had
+    // done nothing at all.
+    const older = [];
     imagePool.forEach((src) => {
-      if (!selectedImages.includes(src)) addImageCard(src);
+      if (selectedImages.includes(src)) return;
+      if (addedThisRound.has(src)) addImageCard(src, true);
+      else older.push(src);
     });
+    older.forEach((src) => addImageCard(src));
 
     updateConfirmLabel();
     if (!timelineStep.hidden) renderTimeline();
@@ -1041,9 +1060,10 @@ function addUploadTile() {
   imageGrid.appendChild(tile);
 }
 
-function addImageCard(src) {
+function addImageCard(src, isNew = false) {
   const card = document.createElement("div");
-  card.className = "image-card" + (selectedImages.includes(src) ? " selected" : "");
+  card.className =
+    "image-card" + (selectedImages.includes(src) ? " selected" : "") + (isNew ? " image-card-new" : "");
 
   const img = document.createElement("img");
   img.src = src;
@@ -1303,6 +1323,7 @@ async function generateMontage() {
       // Provisional cover: the raw first image, so the history entry is never
       // blank. Replaced by the styled miniature once the user generates it.
       thumbnail: selectedImages[0] || "",
+      thumbnailTikTok: "",
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
       titles: metadata?.titles || [],
       description: metadata?.description || "",
@@ -1380,12 +1401,16 @@ async function generateProjectThumbnail() {
   try {
     await document.fonts.load('700 90px "Obelix Pro"');
     const source = currentProject.loadedImages[coverImageIndex] || currentProject.loadedImages[0];
-    const thumbnail = generateThumbnail(
-      source, currentProject.thumbnailTitle, montageCanvas.width, montageCanvas.height
-    );
+    const W = montageCanvas.width;
+    const H = montageCanvas.height;
+    // Two compositions: bottom-anchored for YouTube/Instagram, top-anchored
+    // for TikTok whose bottom is covered by its own UI.
+    const thumbnail = generateThumbnail(source, currentProject.thumbnailTitle, W, H, "standard");
+    const thumbnailTikTok = generateThumbnail(source, currentProject.thumbnailTitle, W, H, "tiktok");
 
     currentProject.thumbnail = thumbnail;
-    await updateHistoryThumbnail(currentProject.id, thumbnail);
+    currentProject.thumbnailTikTok = thumbnailTikTok;
+    await updateHistoryThumbnail(currentProject.id, thumbnail, thumbnailTikTok);
     // Re-render the publishing panel so it shows the new cover.
     openPublishPanel(currentProject, publishPanel);
     status.textContent = "Miniature générée — elle sert de couverture à la publication.";
@@ -1930,12 +1955,17 @@ function bounceEaseOut(t) {
 // video thumbnail and the 1080x1350 TikTok cover).
 const THUMBNAIL_REFERENCE_WIDTH = 540;
 
-function generateThumbnail(img, titleText, canvasW, canvasH) {
+// Two deliberately different compositions. TikTok covers the bottom of the
+// frame with the username, caption and action rail, so a bottom-anchored
+// title gets swallowed there — the TikTok variant pushes everything to the
+// top instead. YouTube/Instagram keep the classic bottom-anchored layout.
+function generateThumbnail(img, titleText, canvasW, canvasH, variant = "standard") {
   const canvas = document.createElement("canvas");
   canvas.width = canvasW;
   canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
   const s = canvasW / THUMBNAIL_REFERENCE_WIDTH;
+  const topAnchored = variant === "tiktok";
 
   const blurredBg = getBlurredBackground(img, canvasW, canvasH, {});
   ctx.drawImage(blurredBg, 0, 0, canvasW, canvasH);
@@ -1945,25 +1975,39 @@ function generateThumbnail(img, titleText, canvasW, canvasH) {
   // the montage's "contain" letterboxing during playback.
   drawScaledImage(ctx, img, canvasW, canvasH, 1.08, "cover");
 
-  const gradient = ctx.createLinearGradient(0, canvasH * 0.5, 0, canvasH);
-  gradient.addColorStop(0, "rgba(0,0,0,0)");
-  gradient.addColorStop(1, "rgba(0,0,0,0.92)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, canvasH * 0.5, canvasW, canvasH * 0.5);
+  if (topAnchored) {
+    // Darkened band at the TOP, where the title will sit.
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvasH * 0.55);
+    gradient.addColorStop(0, "rgba(0,0,0,0.92)");
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvasW, canvasH * 0.55);
 
-  drawBrandBadge(ctx, s);
+    // Red rule under the title block, and the badge moved to the bottom-left
+    // where TikTok leaves room.
+    drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s, "top");
+    drawBrandBadge(ctx, s, "bottom");
+  } else {
+    const gradient = ctx.createLinearGradient(0, canvasH * 0.5, 0, canvasH);
+    gradient.addColorStop(0, "rgba(0,0,0,0)");
+    gradient.addColorStop(1, "rgba(0,0,0,0.92)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, canvasH * 0.5, canvasW, canvasH * 0.5);
 
-  ctx.fillStyle = "#E63946";
-  ctx.fillRect(0, canvasH - 12 * s, canvasW, 12 * s);
+    drawBrandBadge(ctx, s);
 
-  drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s);
+    ctx.fillStyle = "#E63946";
+    ctx.fillRect(0, canvasH - 12 * s, canvasW, 12 * s);
+
+    drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s);
+  }
 
   return canvas.toDataURL("image/jpeg", 0.9);
 }
 
 // Small "SukiAMV" pill in the top-left corner, in the app's red — the
 // same branding treatment a hand-made channel thumbnail would carry.
-function drawBrandBadge(ctx, s = 1) {
+function drawBrandBadge(ctx, s = 1, anchor = "top") {
   const text = "SukiAMV";
   ctx.font = `700 ${24 * s}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
   ctx.textAlign = "left";
@@ -1973,9 +2017,11 @@ function drawBrandBadge(ctx, s = 1) {
   // their own UI and round the corners of the frame, so a badge tight to the
   // edge gets clipped or hidden once published.
   const x = 52 * s;
+  const h0 = 44 * s;
   // Sits well below the top edge: on the video it was crowding the top of
-  // the frame, and social players overlay their own UI up there.
-  const y = 104 * s;
+  // the frame, and social players overlay their own UI up there. The
+  // "bottom" anchor is used by the TikTok cover, whose title lives up top.
+  const y = anchor === "bottom" ? ctx.canvas.height - h0 - 104 * s : 104 * s;
   const padX = 16 * s;
   const h = 44 * s;
 
@@ -1997,7 +2043,7 @@ function drawBrandBadge(ctx, s = 1) {
   ctx.restore();
 }
 
-function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
+function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1, anchor = "bottom") {
   const clean = (text || "").trim().toUpperCase();
   if (!clean) return;
 
@@ -2053,7 +2099,10 @@ function drawThumbnailTitle(ctx, text, canvasW, canvasH, s = 1) {
   // side, so the line box needs generous spacing — a tighter 1.15 line
   // height made adjacent lines' rims collide and overlap.
   const lineHeight = fontSize * 1.5;
-  const startY = canvasH - bottomPad - (lines.length - 1) * lineHeight;
+  // Top-anchored covers start below the status-bar area; bottom-anchored
+  // ones grow upward from the bottom padding as before.
+  const startY =
+    anchor === "top" ? 190 * s : canvasH - bottomPad - (lines.length - 1) * lineHeight;
 
   lines.forEach((line, i) => {
     const y = startY + i * lineHeight;
@@ -2278,7 +2327,8 @@ async function schedulePost({ platform, item, title, caption, publishNow, when }
 
   // Uploaded once and reused for every target channel.
   const videoUrl = await uploadMedia(item.videoBlob, "video/mp4");
-  const coverUrl = item.thumbnail ? await uploadMedia(item.thumbnail, "image/jpeg") : null;
+  const cover = (platform === "tiktok" ? item.thumbnailTikTok : item.thumbnail) || item.thumbnail;
+  const coverUrl = cover ? await uploadMedia(cover, "image/jpeg") : null;
 
   const posts = [];
   for (const channel of targets) {
@@ -2344,24 +2394,31 @@ function openPublishPanel(item, host) {
   function loadPlatform(next) {
     platform = next;
     tabs.forEach((t) => t.classList.toggle("active", t.dataset.platform === platform));
+    showCoverFor(platform);
   }
 
-  // One single cover for every platform.
-  const coverSrc = item.thumbnail || "";
-  cover.src = coverSrc;
-  cover.hidden = !coverSrc;
-  coverDownload.href = coverSrc;
-  coverDownload.hidden = !coverSrc;
   // Without this the button rendered as an empty red bar.
   coverDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
-  // Same behaviour as the video button: native share sheet on iOS so the
-  // image lands in Photos rather than in Files.
-  coverDownload.onclick = async (e) => {
-    if (!coverSrc) return;
-    e.preventDefault();
-    const blob = await (await fetch(coverSrc)).blob();
-    saveMediaToDevice(blob, "sukiamv-miniature.jpg", statusEl);
-  };
+
+  function showCoverFor(target) {
+    // TikTok gets its own top-anchored composition; the merged
+    // YouTube/Instagram target uses the bottom-anchored one.
+    const src = (target === "tiktok" ? item.thumbnailTikTok : item.thumbnail) || item.thumbnail || "";
+    cover.src = src;
+    cover.hidden = !src;
+    coverDownload.hidden = !src;
+    coverDownload.href = src;
+    const name = target === "tiktok" ? "sukiamv-miniature-tiktok.jpg" : "sukiamv-miniature.jpg";
+    coverDownload.download = name;
+    // Same behaviour as the video button: native share sheet on iOS so the
+    // image lands in Photos rather than in Files.
+    coverDownload.onclick = async (e) => {
+      if (!src) return;
+      e.preventDefault();
+      const blob = await (await fetch(src)).blob();
+      saveMediaToDevice(blob, name, statusEl);
+    };
+  }
 
   // Every SEO field copies on click, no buttons.
   seoDescription.value = item.description || "";
@@ -2517,7 +2574,7 @@ function openHistoryDb() {
   });
 }
 
-async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title, titles, description, tags }) {
+async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thumbnailTikTok, title, titles, description, tags }) {
   try {
     const db = await openHistoryDb();
     const tx = db.transaction(HISTORY_STORE, "readwrite");
@@ -2530,6 +2587,7 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, titl
       videoBlob,
       videoExt,
       thumbnail,
+      thumbnailTikTok: thumbnailTikTok || "",
       date: Date.now(),
     });
     const id = await new Promise((resolve, reject) => {
@@ -2546,7 +2604,7 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, titl
 
 // Swaps in the styled miniature once it's generated, replacing the raw
 // placeholder cover saved right after the video.
-async function updateHistoryThumbnail(id, thumbnail) {
+async function updateHistoryThumbnail(id, thumbnail, thumbnailTikTok = "") {
   if (!id) return;
   try {
     const db = await openHistoryDb();
@@ -2555,7 +2613,7 @@ async function updateHistoryThumbnail(id, thumbnail) {
     const req = store.get(id);
     await new Promise((resolve, reject) => {
       req.onsuccess = () => {
-        if (req.result) store.put({ ...req.result, thumbnail });
+        if (req.result) store.put({ ...req.result, thumbnail, thumbnailTikTok });
         resolve();
       };
       req.onerror = () => reject(req.error);

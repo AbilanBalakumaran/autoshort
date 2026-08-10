@@ -444,6 +444,14 @@ label {
   margin: 14px auto 0;
 }
 
+/* Full width like every other action button. */
+#generate-thumbnail-btn,
+.publish-cover-download {
+  width: 100%;
+  max-width: none;
+  margin: 12px auto 16px;
+}
+
 .audio-label {
   display: block;
   margin-bottom: 8px;
@@ -519,6 +527,23 @@ label {
 .image-card.selected {
   border-color: #C1121F;
   box-shadow: 0 0 16px rgba(193, 18, 31, 0.5);
+}
+
+/* Marks images found by the latest "Régénérer" so it's obvious what's new. */
+.image-card-new::before {
+  content: "NOUVEAU";
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid #E63946;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 /* Shows the selection ORDER (1, 2, 3...) like the iOS photo picker, so the
@@ -872,10 +897,6 @@ input[type="datetime-local"]:focus,
   color: #f0f0f5;
 }
 
-.publish-cover-download {
-  max-width: 220px;
-  margin: 0 0 14px;
-}
 
 .publish-panel {
   margin-top: 28px;
