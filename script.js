@@ -11,17 +11,13 @@ const PUBLISH_NOW_STORAGE_KEY = "sukishort-publish-now";
 const BOOKED_DAYS_STORAGE_KEY = "sukishort-booked-days";
 const DEFAULT_PUBLISH_TIME = "06:40";
 
-// YouTube and Instagram are merged into one target: they take the same
-// vertical cover and the same caption style, so splitting them only made
-// the user do the job twice. Selecting it publishes to both channels.
-const PLATFORMS = {
-  tiktok: { label: "TikTok", services: ["tiktok"], maxCaption: 2200, hashtags: 6 },
-  "youtube-instagram": {
-    label: "YouTube & Instagram",
-    services: ["youtube", "instagram"],
-    maxCaption: 2200,
-    hashtags: 12,
-  },
+// One video, one cover, one caption, published everywhere at once: the
+// per-network variants only duplicated the same work, so there is no
+// platform switch left in the UI.
+const PUBLISH_TARGET = {
+  services: ["tiktok", "youtube", "instagram"],
+  maxCaption: 2200,
+  hashtags: 8,
 };
 const DEFAULT_DURATION = 16;
 const WORDS_PER_SECOND = 35 / 16;
@@ -199,6 +195,57 @@ function initLogo() {
   document.getElementById("app-logo").addEventListener("click", () => {
     document.querySelector('.tab-btn[data-tab="generate"]').click();
   });
+}
+
+// A web app cannot keep running once iOS suspends it, and the video is
+// encoded here on the device — so "carry on in the background" isn't
+// achievable. What is: keep the screen awake for the duration so the phone
+// can't sleep mid-generation, and fire a notification at the end of each
+// step so the user doesn't have to watch the screen.
+let wakeLock = null;
+
+async function keepAwake() {
+  try {
+    if ("wakeLock" in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => (wakeLock = null));
+    }
+  } catch {
+    // Denied or unsupported — generation still works, the screen may sleep.
+  }
+}
+
+function releaseAwake() {
+  try {
+    wakeLock?.release();
+  } catch {
+    /* already gone */
+  }
+  wakeLock = null;
+}
+
+// Re-acquired when coming back to the app: iOS drops the lock on hide.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && wakeLock === null && isGenerating) keepAwake();
+});
+
+let isGenerating = false;
+
+async function notifyStep(title, body) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return;
+    await registration.showNotification(title, {
+      body,
+      icon: "./icons/icon-192.png",
+      badge: "./icons/icon-192.png",
+      tag: "sukiamv-step",
+      renotify: true,
+    });
+  } catch {
+    // Notifications are a convenience — never let one break a generation.
+  }
 }
 
 function initServiceWorker() {
@@ -622,6 +669,7 @@ form.addEventListener("submit", async (e) => {
       ? `Durée estimée : ~${estimateDuration(currentVoiceScript)}s`
       : "";
     status.textContent = "";
+    notifyStep("Script prêt", "Le script vocal est généré — tu peux lancer l'audio.");
   } catch (err) {
     status.textContent = `Erreur : ${err.message}`;
   } finally {
@@ -633,6 +681,8 @@ generateAudioBtn.addEventListener("click", async () => {
   if (!currentVoiceScript) return;
 
   generateAudioBtn.disabled = true;
+  isGenerating = true;
+  keepAwake();
   status.textContent = "Génération de l'audio...";
   audioWrapper.hidden = true;
 
@@ -657,6 +707,7 @@ generateAudioBtn.addEventListener("click", async () => {
     const audioBlob = base64ToBlob(audioData.audioBase64, audioData.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
     audioPlayer.src = URL.createObjectURL(audioBlob);
     audioWrapper.hidden = false;
+    notifyStep("Audio prêt", "La narration est générée — passe au choix des images.");
     currentWordTimings = audioData.wordTimings || null;
     status.textContent =
       audioData.source === "workers-ai"
@@ -670,6 +721,8 @@ generateAudioBtn.addEventListener("click", async () => {
     speakWithBrowser(currentVoiceScript);
   } finally {
     generateAudioBtn.disabled = false;
+    isGenerating = false;
+    releaseAwake();
   }
 });
 
@@ -1280,6 +1333,10 @@ async function generateMontage() {
   }
 
   montageBtn.disabled = true;
+  // Encoding runs on this device: if the phone sleeps the page is frozen and
+  // the montage stalls, so hold a screen wake lock until it's done.
+  isGenerating = true;
+  keepAwake();
   status.textContent = "Chargement des images...";
   log("Chargement des images sélectionnées...");
 
@@ -1334,7 +1391,6 @@ async function generateMontage() {
       // Provisional cover: the raw first image, so the history entry is never
       // blank. Replaced by the styled miniature once the user generates it.
       thumbnail: selectedImages[0] || "",
-      thumbnailTikTok: "",
       title: metadata?.titles?.[0] || currentVoiceScript.slice(0, 60),
       titles: metadata?.titles || [],
       description: metadata?.description || "",
@@ -1360,6 +1416,7 @@ async function generateMontage() {
 
     log("Terminé");
     status.textContent = "";
+    notifyStep("Vidéo prête", "Le montage est terminé — choisis la couverture de la miniature.");
   } catch (err) {
     const message = err?.message || err || "erreur inconnue";
     status.textContent = `Erreur montage : ${message}`;
@@ -1367,6 +1424,8 @@ async function generateMontage() {
     if (err?.stack) log(err.stack);
   } finally {
     montageBtn.disabled = false;
+    isGenerating = false;
+    releaseAwake();
   }
 }
 
@@ -1416,15 +1475,14 @@ async function generateProjectThumbnail() {
     const H = montageCanvas.height;
     // Two compositions: bottom-anchored for YouTube/Instagram, top-anchored
     // for TikTok whose bottom is covered by its own UI.
-    const thumbnail = generateThumbnail(source, currentProject.thumbnailTitle, W, H, "standard");
-    const thumbnailTikTok = generateThumbnail(source, currentProject.thumbnailTitle, W, H, "tiktok");
+    const thumbnail = generateThumbnail(source, currentProject.thumbnailTitle, W, H);
 
     currentProject.thumbnail = thumbnail;
-    currentProject.thumbnailTikTok = thumbnailTikTok;
-    await updateHistoryThumbnail(currentProject.id, thumbnail, thumbnailTikTok);
+    await updateHistoryThumbnail(currentProject.id, thumbnail);
     // Re-render the publishing panel so it shows the new cover.
     openPublishPanel(currentProject, publishPanel);
     status.textContent = "Miniature générée — elle sert de couverture à la publication.";
+    notifyStep("Miniature prête", "Tout est terminé — la vidéo peut être programmée.");
     publishPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (err) {
     status.textContent = `Erreur miniature : ${err.message}`;
@@ -1966,17 +2024,14 @@ function bounceEaseOut(t) {
 // video thumbnail and the 1080x1350 TikTok cover).
 const THUMBNAIL_REFERENCE_WIDTH = 540;
 
-// Two deliberately different compositions. TikTok covers the bottom of the
-// frame with the username, caption and action rail, so a bottom-anchored
-// title gets swallowed there — the TikTok variant pushes everything to the
-// top instead. YouTube/Instagram keep the classic bottom-anchored layout.
-function generateThumbnail(img, titleText, canvasW, canvasH, variant = "standard") {
+// One general composition used everywhere: title anchored at the bottom
+// over a darkened gradient, badge top-left, red rule along the bottom.
+function generateThumbnail(img, titleText, canvasW, canvasH) {
   const canvas = document.createElement("canvas");
   canvas.width = canvasW;
   canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
   const s = canvasW / THUMBNAIL_REFERENCE_WIDTH;
-  const topAnchored = variant === "tiktok";
 
   const blurredBg = getBlurredBackground(img, canvasW, canvasH, {});
   ctx.drawImage(blurredBg, 0, 0, canvasW, canvasH);
@@ -1986,32 +2041,18 @@ function generateThumbnail(img, titleText, canvasW, canvasH, variant = "standard
   // the montage's "contain" letterboxing during playback.
   drawScaledImage(ctx, img, canvasW, canvasH, 1.08, "cover");
 
-  if (topAnchored) {
-    // Darkened band at the TOP, where the title will sit.
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvasH * 0.55);
-    gradient.addColorStop(0, "rgba(0,0,0,0.92)");
-    gradient.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvasW, canvasH * 0.55);
+  const gradient = ctx.createLinearGradient(0, canvasH * 0.5, 0, canvasH);
+  gradient.addColorStop(0, "rgba(0,0,0,0)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.92)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, canvasH * 0.5, canvasW, canvasH * 0.5);
 
-    // Red rule under the title block, and the badge moved to the bottom-left
-    // where TikTok leaves room.
-    drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s, "top");
-    drawBrandBadge(ctx, s, "bottom");
-  } else {
-    const gradient = ctx.createLinearGradient(0, canvasH * 0.5, 0, canvasH);
-    gradient.addColorStop(0, "rgba(0,0,0,0)");
-    gradient.addColorStop(1, "rgba(0,0,0,0.92)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, canvasH * 0.5, canvasW, canvasH * 0.5);
+  drawBrandBadge(ctx, s);
 
-    drawBrandBadge(ctx, s);
+  ctx.fillStyle = "#E63946";
+  ctx.fillRect(0, canvasH - 12 * s, canvasW, 12 * s);
 
-    ctx.fillStyle = "#E63946";
-    ctx.fillRect(0, canvasH - 12 * s, canvasW, 12 * s);
-
-    drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s);
-  }
+  drawThumbnailTitle(ctx, titleText, canvasW, canvasH, s);
 
   return canvas.toDataURL("image/jpeg", 0.9);
 }
@@ -2262,14 +2303,14 @@ function suggestNextSlot() {
   return parisToUtc(day, time);
 }
 
-function buildCaption(platform, item) {
+function buildCaption(item) {
   const description = (item.description || "").trim();
   const tags = (item.tags || "")
     .split(/[,\n]/)
     .map((t) => t.trim().replace(/^#/, ""))
     .filter(Boolean);
 
-  const config = PLATFORMS[platform];
+  const config = PUBLISH_TARGET;
   const hashtags = tags.slice(0, config.hashtags).map((t) => `#${t.replace(/\s+/g, "")}`);
   const text = [description, hashtags.join(" ")].filter(Boolean).join("\n\n");
   return text.slice(0, config.maxCaption);
@@ -2324,13 +2365,13 @@ async function uploadMedia(blobOrDataUrl, contentType) {
   return data.url;
 }
 
-async function schedulePost({ platform, item, title, caption, publishNow, when }) {
+async function schedulePost({ item, title, caption, publishNow, when }) {
   const channels = await fetchBufferChannels();
-  const wanted = PLATFORMS[platform].services;
+  const wanted = PUBLISH_TARGET.services;
   const targets = channels.filter((c) => wanted.includes((c.service || "").toLowerCase()));
   if (targets.length === 0) {
     throw new Error(
-      `Aucun compte ${PLATFORMS[platform].label} connecté sur Buffer (comptes trouvés : ${
+      `Aucun compte TikTok, YouTube ou Instagram connecté sur Buffer (comptes trouvés : ${
         channels.map((c) => c.service).join(", ") || "aucun"
       }).`
     );
@@ -2338,7 +2379,7 @@ async function schedulePost({ platform, item, title, caption, publishNow, when }
 
   // Uploaded once and reused for every target channel.
   const videoUrl = await uploadMedia(item.videoBlob, "video/mp4");
-  const cover = (platform === "tiktok" ? item.thumbnailTikTok : item.thumbnail) || item.thumbnail;
+  const cover = item.thumbnail;
   const coverUrl = cover ? await uploadMedia(cover, "image/jpeg") : null;
 
   const posts = [];
@@ -2395,31 +2436,23 @@ function openPublishPanel(item, host) {
   const dateInput = panel.querySelector(".publish-date");
   const publishBtn = panel.querySelector(".publish-btn");
   const statusEl = panel.querySelector(".publish-status");
-  const tabs = [...panel.querySelectorAll(".platform-tab")];
 
   // The tabs now only pick where to publish — the caption and cover are the
   // same everywhere, which keeps the panel short instead of duplicating the
   // same fields three times.
-  let platform = "tiktok";
 
-  function loadPlatform(next) {
-    platform = next;
-    tabs.forEach((t) => t.classList.toggle("active", t.dataset.platform === platform));
-    showCoverFor(platform);
-  }
 
   // Without this the button rendered as an empty red bar.
   coverDownload.innerHTML = iconLabel("download", "Télécharger la miniature");
 
-  function showCoverFor(target) {
-    // TikTok gets its own top-anchored composition; the merged
-    // YouTube/Instagram target uses the bottom-anchored one.
-    const src = (target === "tiktok" ? item.thumbnailTikTok : item.thumbnail) || item.thumbnail || "";
+  function showCover() {
+    // One general cover for every network.
+    const src = item.thumbnail || "";
     cover.src = src;
     cover.hidden = !src;
     coverDownload.hidden = !src;
     coverDownload.href = src;
-    const name = target === "tiktok" ? "sukiamv-miniature-tiktok.jpg" : "sukiamv-miniature.jpg";
+    const name = "sukiamv-miniature.jpg";
     coverDownload.download = name;
     // Same behaviour as the video button: native share sheet on iOS so the
     // image lands in Photos rather than in Files.
@@ -2448,7 +2481,6 @@ function openPublishPanel(item, host) {
     seoTitles.appendChild(btn);
   });
 
-  tabs.forEach((t) => t.addEventListener("click", () => loadPlatform(t.dataset.platform)));
 
   nowToggle.checked = getPublishNowDefault();
   scheduleWrap.hidden = nowToggle.checked;
@@ -2459,7 +2491,7 @@ function openPublishPanel(item, host) {
 
   dateInput.value = toDatetimeLocalValue(suggestNextSlot());
   publishBtn.innerHTML = iconLabel("film", nowToggle.checked ? "Publier maintenant" : "Programmer sur Buffer");
-  loadPlatform("tiktok");
+  showCover();
 
   publishBtn.addEventListener("click", async () => {
     if (!getBufferKey()) {
@@ -2472,14 +2504,14 @@ function openPublishPanel(item, host) {
     const when = publishNow ? new Date() : parisToUtc(dayStr, timeStr || getDefaultPublishTime());
 
     statusEl.textContent = publishNow
-      ? `Publication sur ${PLATFORMS[platform].label}...`
-      : `Programmation sur ${PLATFORMS[platform].label}...`;
+      ? "Publication en cours..."
+      : "Programmation en cours...";
 
     try {
       const posts = await schedulePost({
-        platform, item,
+        item,
         title: buildPostTitle(item),
-        caption: buildCaption(platform, item),
+        caption: buildCaption(item),
         publishNow, when,
       });
       if (!publishNow) bookDay(dayStr);
@@ -2585,7 +2617,7 @@ function openHistoryDb() {
   });
 }
 
-async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thumbnailTikTok, title, titles, description, tags }) {
+async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, title, titles, description, tags }) {
   try {
     const db = await openHistoryDb();
     const tx = db.transaction(HISTORY_STORE, "readwrite");
@@ -2598,7 +2630,6 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thum
       videoBlob,
       videoExt,
       thumbnail,
-      thumbnailTikTok: thumbnailTikTok || "",
       date: Date.now(),
     });
     const id = await new Promise((resolve, reject) => {
@@ -2615,7 +2646,7 @@ async function saveToHistory({ voiceScript, videoBlob, videoExt, thumbnail, thum
 
 // Swaps in the styled miniature once it's generated, replacing the raw
 // placeholder cover saved right after the video.
-async function updateHistoryThumbnail(id, thumbnail, thumbnailTikTok = "") {
+async function updateHistoryThumbnail(id, thumbnail) {
   if (!id) return;
   try {
     const db = await openHistoryDb();
@@ -2624,7 +2655,7 @@ async function updateHistoryThumbnail(id, thumbnail, thumbnailTikTok = "") {
     const req = store.get(id);
     await new Promise((resolve, reject) => {
       req.onsuccess = () => {
-        if (req.result) store.put({ ...req.result, thumbnail, thumbnailTikTok });
+        if (req.result) store.put({ ...req.result, thumbnail });
         resolve();
       };
       req.onerror = () => reject(req.error);
