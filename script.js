@@ -1362,6 +1362,29 @@ function speakWithBrowser(text) {
   window.speechSynthesis.speak(utterance);
 }
 
+// Shared AudioContext for the montage, created during the click gesture.
+let montageAudioCtx = null;
+
+// Safari only allows an AudioContext to leave the "suspended" state from
+// inside a user gesture. Calling resume() plus playing a silent 1-sample
+// buffer synchronously during the click is the standard way to unlock it,
+// after which the context stays running for the rest of the session.
+function getUnlockedAudioContext() {
+  if (!montageAudioCtx || montageAudioCtx.state === "closed") {
+    montageAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  montageAudioCtx.resume().catch(() => {});
+  try {
+    const silent = montageAudioCtx.createBufferSource();
+    silent.buffer = montageAudioCtx.createBuffer(1, 1, montageAudioCtx.sampleRate);
+    silent.connect(montageAudioCtx.destination);
+    silent.start(0);
+  } catch {
+    /* unlock is best-effort; the draw loop falls back to the wall clock */
+  }
+  return montageAudioCtx;
+}
+
 async function generateMontage() {
   debugLog.textContent = "";
   log("Clic sur Générer le montage");
@@ -1371,6 +1394,14 @@ async function generateMontage() {
     log("Bloqué : pas d'image sélectionnée ou pas d'audio généré");
     return;
   }
+
+  // The AudioContext used for recording is created and unlocked HERE, while
+  // still inside the click's user-gesture window. Safari only lets a context
+  // start from a gesture, and by the time the montage actually renders we're
+  // many awaits away from the click — a context created there can never be
+  // resumed, leaving the recording silent (or stalled on a resume() that
+  // never settles).
+  montageAudioCtx = getUnlockedAudioContext();
 
   montageBtn.disabled = true;
   // Encoding runs on this device: if the phone sleeps the page is frozen and
@@ -1806,19 +1837,28 @@ async function encodeAudioTrack(audioEncoder, audioBuffer, numberOfChannels) {
 // MediaRecorder. Produces a less universally compatible file, but it's better
 // than no video at all.
 async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimings) {
-  const audioCtx = new AudioContext();
+  // Reuse the context unlocked during the click; only build a fresh one if
+  // this path is somehow reached without going through generateMontage().
+  const audioCtx = montageAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
 
   // iOS Safari starts an AudioContext in the "suspended" state whenever it's
   // created outside a user gesture — which is the case here, since the context
   // is only built after the audio has been fetched and decoded (several awaits
   // after the button click). A suspended context's currentTime stays frozen at
   // 0, so the draw loop below never reaches the end of the audio, never calls
-  // recorder.stop(), and the promise never resolves: the log simply stops and
-  // no file is ever produced. Resuming it first is what unfreezes the clock.
+  // recorder.stop(), and the promise never resolves.
+  //
+  // resume() is raced against a timeout rather than simply awaited: when
+  // Safari refuses to start a context outside a gesture, the promise it
+  // returns never settles at all — it doesn't reject — so a bare await hangs
+  // forever. Either way we carry on, because the draw loop has its own
+  // wall-clock fallback when the audio clock stays frozen.
   if (audioCtx.state === "suspended") {
-    try {
-      await audioCtx.resume();
-    } catch {
+    await Promise.race([
+      audioCtx.resume().catch(() => {}),
+      new Promise((r) => setTimeout(r, 1000)),
+    ]);
+    if (audioCtx.state !== "running") {
       log("Contexte audio non réveillé — bascule sur l'horloge système");
     }
   }
