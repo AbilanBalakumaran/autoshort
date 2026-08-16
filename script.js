@@ -3087,3 +3087,4 @@ function openArticle(article) {
   articleSourceLink.innerHTML = `<span class="icon">${ICONS.link}</span><span>${sourceLabel}</span>`;
   articleDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
