@@ -695,7 +695,7 @@ form.addEventListener("submit", async (e) => {
     const data = await res.json();
 
     if (!res.ok) {
-      throw new Error(data.error || "Erreur inconnue");
+      throw new Error(data.details || data.error || "Erreur inconnue");
     }
 
     scriptOutput.textContent = data.voiceScript || "(aucun script vocal extrait)";

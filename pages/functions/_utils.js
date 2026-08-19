@@ -1,3 +1,7 @@
+// Groq retires models on a schedule; llama-3.3-70b-versatile was shut down
+// on 2026-08-16. Keep the id here so every caller moves at once.
+export const GROQ_MODEL = "openai/gpt-oss-120b";
+
 export const ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"; // Adam
 
 // Curated list of well-known ElevenLabs premade voices, shown in Settings

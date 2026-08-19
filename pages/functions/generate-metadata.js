@@ -1,4 +1,4 @@
-import { json, corsHeaders } from "./_utils.js";
+import { GROQ_MODEL, json, corsHeaders } from "./_utils.js";
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
@@ -39,7 +39,7 @@ export async function onRequestPost({ request, env }) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: GROQ_MODEL,
       temperature: 0.8,
       messages: [
         { role: "system", content: METADATA_SYSTEM_PROMPT },
