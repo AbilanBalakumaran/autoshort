@@ -82,9 +82,7 @@ export async function onRequestPost({ request, env }) {
     // Say why ElevenLabs was skipped rather than let the page guess: a
     // missing key and an exhausted quota look the same from the outside,
     // and only one of the two is worth waiting a month for.
-    const raison = !elevenKey
-      ? "clé ElevenLabs absente"
-      : `ElevenLabs a répondu ${elevenRes.status}`;
+    const raison = raisonDuRepli(elevenKey, elevenRes.status, elevenErrText);
     return json({ audioBase64, wordTimings, source: "workers-ai", raison });
   } catch (fallbackErr) {
     return json(
@@ -95,6 +93,20 @@ export async function onRequestPost({ request, env }) {
       502
     );
   }
+}
+
+// ElevenLabs répond 401 aussi bien pour une clé invalide que pour un quota
+// dépassé : le statut seul ne tranche pas, et les deux n'appellent pas du tout
+// la même réaction — l'une se répare en une minute, l'autre attend le mois
+// suivant. Le corps de la réponse, lui, porte un code explicite.
+function raisonDuRepli(cle, statut, corps) {
+  if (!cle) return "Clé ElevenLabs absente";
+  const reste = corps.match(/You have (\d+) credits? remaining/i)?.[1];
+  if (/quota_exceeded/.test(corps)) {
+    return `Quota ElevenLabs épuisé${reste ? ` (${reste} crédits restants)` : ""} — il se recharge le mois prochain`;
+  }
+  if (statut === 401) return "Clé ElevenLabs refusée";
+  return `ElevenLabs a répondu ${statut}`;
 }
 
 function computeWordTimings(alignment) {
