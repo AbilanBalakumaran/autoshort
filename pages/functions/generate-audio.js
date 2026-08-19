@@ -17,12 +17,18 @@ export async function onRequestPost({ request, env }) {
   // later than ElevenLabs' alignment timestamps assume — the actual
   // remaining source of subtitle drift even with correct per-word timings.
   // WAV is uncompressed PCM with a plain header, so it decodes sample-exact.
+  // Two names for the same key: the older worker declared it as
+  // VITE_ELEVENLABS_API_KEY. Accept either, so a secret set under the old
+  // name doesn't silently send an empty key and make every request fall
+  // back to the slow voice while blaming a quota.
+  const elevenKey = env.ELEVENLABS_API_KEY || env.VITE_ELEVENLABS_API_KEY;
+
   const elevenRes = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}/with-timestamps?output_format=wav_24000`,
     {
       method: "POST",
       headers: {
-        "xi-api-key": env.ELEVENLABS_API_KEY,
+        "xi-api-key": elevenKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -73,7 +79,13 @@ export async function onRequestPost({ request, env }) {
     // timestamps for perfect subtitle sync on the fallback voice too.
     const wordTimings = await transcribeWordTimings(audioBuffer, env.GROQ_API_KEY);
 
-    return json({ audioBase64, wordTimings, source: "workers-ai" });
+    // Say why ElevenLabs was skipped rather than let the page guess: a
+    // missing key and an exhausted quota look the same from the outside,
+    // and only one of the two is worth waiting a month for.
+    const raison = !elevenKey
+      ? "clé ElevenLabs absente"
+      : `ElevenLabs a répondu ${elevenRes.status}`;
+    return json({ audioBase64, wordTimings, source: "workers-ai", raison });
   } catch (fallbackErr) {
     return json(
       {

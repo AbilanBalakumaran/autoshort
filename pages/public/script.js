@@ -751,7 +751,7 @@ generateAudioBtn.addEventListener("click", async () => {
     currentWordTimings = audioData.wordTimings || null;
     status.textContent =
       audioData.source === "workers-ai"
-        ? "ElevenLabs indisponible (quota) — voix de secours Cloudflare utilisée."
+        ? `${audioData.raison || "ElevenLabs indisponible"} — voix de secours Cloudflare utilisée.`
         : "";
 
     // Deliberately does NOT jump to the image step — the user listens to the
