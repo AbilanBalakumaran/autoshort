@@ -2082,6 +2082,10 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
   let wordAppearedAt;
 
   if (timingsMs) {
+    // Nothing is spoken yet before the first word's start time, so there is
+    // no subtitle to draw. Without this the code below would run with a
+    // negative progress value.
+    if (elapsedMs < timingsMs[0]) return;
     // Real per-word start times: the current word is the last one whose
     // start time has already passed.
     currentIndex = 0;
@@ -2092,12 +2096,15 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
     wordAppearedAt = timingsMs[currentIndex];
   } else {
     const wordDurationMs = totalMs / words.length;
-    currentIndex = Math.min(words.length - 1, Math.floor(elapsedMs / wordDurationMs));
+    currentIndex = Math.min(words.length - 1, Math.max(0, Math.floor(elapsedMs / wordDurationMs)));
     wordAppearedAt = currentIndex * wordDurationMs;
   }
 
   const word = words[currentIndex].toUpperCase();
-  const bounceProgress = Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS);
+  // Clamped at both ends: bounceEaseOut is a back-out curve, so feeding it a
+  // negative t returns a large negative number, which as a canvas scale draws
+  // the word mirrored and many times too big for a frame or two.
+  const bounceProgress = Math.max(0, Math.min(1, (elapsedMs - wordAppearedAt) / SUBTITLE_BOUNCE_MS));
   const scale = bounceEaseOut(bounceProgress);
 
   // Scaled from the 540px reference the styling was authored against, so
