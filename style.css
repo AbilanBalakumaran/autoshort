@@ -1311,3 +1311,44 @@ button:disabled {
     order: 2;
   }
 }
+
+/* Popularity filter + score badge on the Suggestions tab. */
+.suggestions-filters {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.filter-btn {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #b9b9c2;
+  background: #1a1a1e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.filter-btn.active {
+  color: #fff;
+  background: #E63946;
+  border-color: #E63946;
+}
+
+.article-score {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #b9b9c2;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+.article-score.hot {
+  color: #fff;
+  background: rgba(230, 57, 70, 0.9);
+}
