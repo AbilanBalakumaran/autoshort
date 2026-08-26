@@ -2954,6 +2954,11 @@ function loadSuggestions() {
   refreshSuggestions();
 }
 
+// "all" shows everything, "hot" narrows to the high-scoring stories only.
+let suggestionsFilter = "all";
+// Kept so switching the filter re-renders instantly instead of refetching.
+let lastArticles = [];
+
 async function refreshSuggestions() {
   suggestionsStatus.textContent = "Chargement des actus...";
   suggestionsList.innerHTML = "";
@@ -2965,28 +2970,77 @@ async function refreshSuggestions() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erreur");
 
-    const groups = groupArticlesByDate(data.articles || []);
-    suggestionsStatus.textContent = Object.values(groups).every((g) => g.length === 0)
-      ? "Aucune actu disponible pour l'instant."
-      : "";
-
-    Object.entries(groups).forEach(([label, articles]) => {
-      if (articles.length === 0) return;
-      const heading = document.createElement("h3");
-      heading.className = "suggestions-heading";
-      heading.textContent = label;
-      suggestionsList.appendChild(heading);
-
-      // Real news doesn't publish fast enough for the underlying article
-      // pool to actually change between two clicks a few seconds apart —
-      // shuffling within each date group (recency order is preserved at
-      // the group level) means the display still visibly changes every
-      // time "Actualiser" is pressed instead of showing the identical list.
-      shuffle(articles).forEach((article) => suggestionsList.appendChild(buildArticleCard(article)));
-    });
+    lastArticles = data.articles || [];
+    renderSuggestions();
   } catch (err) {
     suggestionsStatus.textContent = `Erreur actus : ${err.message}`;
   }
+}
+
+function renderSuggestions() {
+  suggestionsList.innerHTML = "";
+  suggestionsList.appendChild(buildFilterBar());
+
+  const pool = suggestionsFilter === "hot" ? lastArticles.filter((a) => a.hot) : lastArticles;
+  const groups = groupArticlesByDate(pool);
+  const isEmpty = Object.values(groups).every((g) => g.length === 0);
+
+  suggestionsStatus.textContent = isEmpty
+    ? suggestionsFilter === "hot"
+      ? "Aucune actu à fort potentiel pour l'instant."
+      : "Aucune actu disponible pour l'instant."
+    : "";
+
+  Object.entries(groups).forEach(([label, articles]) => {
+    if (articles.length === 0) return;
+    const heading = document.createElement("h3");
+    heading.className = "suggestions-heading";
+    heading.textContent = label;
+    suggestionsList.appendChild(heading);
+
+    orderArticles(articles).forEach((article) =>
+      suggestionsList.appendChild(buildArticleCard(article))
+    );
+  });
+}
+
+// Real news doesn't publish fast enough for the article pool to actually
+// change between two clicks a few seconds apart, so the list is shuffled to
+// stay visibly different on every "Actualiser". Shuffling alone would bury
+// the best stories, so the shuffled list is then sorted by score BAND (not
+// exact score): strong stories always float to the top, while articles of
+// comparable weight keep rotating between refreshes.
+function orderArticles(articles) {
+  return shuffle(articles).sort(
+    (a, b) => Math.floor((b.popularity || 0) / 20) - Math.floor((a.popularity || 0) / 20)
+  );
+}
+
+// Built in JS rather than index.html so the whole feature lives in one file.
+function buildFilterBar() {
+  const bar = document.createElement("div");
+  bar.className = "suggestions-filters";
+
+  const hotCount = lastArticles.filter((a) => a.hot).length;
+  const options = [
+    { id: "all", label: `Tout (${lastArticles.length})` },
+    { id: "hot", label: `Populaires (${hotCount})` },
+  ];
+
+  options.forEach(({ id, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `filter-btn${suggestionsFilter === id ? " active" : ""}`;
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      if (suggestionsFilter === id) return;
+      suggestionsFilter = id;
+      renderSuggestions();
+    });
+    bar.appendChild(btn);
+  });
+
+  return bar;
 }
 
 function shuffle(arr) {
@@ -2997,6 +3051,11 @@ function shuffle(arr) {
   }
   return a;
 }
+
+// High-scoring stories stay in the list two weeks longer than the rest: a big
+// announcement is still worth turning into a short well after a routine
+// scheduling note has stopped being interesting.
+const HOT_EXTRA_RETENTION_DAYS = 14;
 
 function groupArticlesByDate(articles) {
   const now = new Date();
@@ -3012,6 +3071,9 @@ function groupArticlesByDate(articles) {
   const startOfMonth1Ago = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
   const startOfMonth2Ago = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
   const startOfMonth3Ago = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+  // The same floor, pushed back two weeks, used only for hot articles.
+  const startOfHotCutoff = new Date(startOfMonth3Ago);
+  startOfHotCutoff.setDate(startOfHotCutoff.getDate() - HOT_EXTRA_RETENTION_DAYS);
 
   const groups = {
     "Aujourd'hui": [],
@@ -3021,6 +3083,7 @@ function groupArticlesByDate(articles) {
     "Il y a 1 mois": [],
     "Il y a 2 mois": [],
     "Il y a 3 mois": [],
+    "Encore chaud": [],
   };
 
   articles.forEach((article) => {
@@ -3040,9 +3103,18 @@ function groupArticlesByDate(articles) {
       groups["Il y a 2 mois"].push(article);
     } else if (date >= startOfMonth3Ago) {
       groups["Il y a 3 mois"].push(article);
+    } else if (article.hot && date >= startOfHotCutoff) {
+      // Past the normal cutoff, but the score earns it two more weeks.
+      groups["Encore chaud"].push(article);
     }
-    // Older than 3 months: dropped, not shown.
+    // Older than that: dropped, not shown.
   });
+
+  // Inside every date bucket the highest-scoring stories come first, so the
+  // most bankable short is always the one at the top of the screen.
+  Object.values(groups).forEach((list) =>
+    list.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+  );
 
   return groups;
 }
@@ -3070,9 +3142,22 @@ function buildArticleCard(article) {
 
   const source = document.createElement("span");
   source.className = "article-card-source";
-  source.textContent = article.source || "";
+  // The source count is shown when several outlets ran the story, since
+  // that's what pushed the score up and it explains the badge.
+  source.textContent =
+    article.sourceCount > 1
+      ? `${article.source || ""} +${article.sourceCount - 1} source(s)`
+      : article.source || "";
 
   textWrap.append(title, source);
+
+  if (typeof article.popularity === "number" && article.popularity > 0) {
+    const badge = document.createElement("span");
+    badge.className = `article-score${article.hot ? " hot" : ""}`;
+    badge.textContent = article.hot ? `🔥 ${article.popularity}` : String(article.popularity);
+    badge.title = "Score de popularité estimé";
+    textWrap.appendChild(badge);
+  }
   card.append(thumb, textWrap);
   card.addEventListener("click", () => openArticle(article));
   return card;
