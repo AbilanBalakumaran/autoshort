@@ -1352,3 +1352,11 @@ button:disabled {
   color: #fff;
   background: rgba(230, 57, 70, 0.9);
 }
+
+/* Status text rendered inside the suggestions list, below the filters. */
+.suggestions-empty {
+  margin: 18px 0;
+  color: #8a8a93;
+  font-size: 0.9rem;
+  text-align: center;
+}
