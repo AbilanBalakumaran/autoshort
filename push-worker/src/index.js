@@ -1,8 +1,10 @@
 import webpush from "web-push";
 
-const RSS_URL = "https://www.animenewsnetwork.com/all/rss.xml";
-const LAST_SEEN_KEY = "last-seen-links";
-const MAX_TRACKED_LINKS = 50;
+// Scores come from the Pages /news endpoint rather than a raw RSS feed, so
+// the worker ranks stories with exactly the same popularity model the app
+// shows — one source of truth instead of two diverging ones.
+const NEWS_URL = "https://autoshort-2ym.pages.dev/news";
+const TOP_ARTICLE_KEY = "top-article";
 
 export default {
   // Manual trigger for testing (GET /check) — mirrors the scheduled logic
@@ -10,51 +12,61 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/check") {
-      const result = await checkForNewArticlesAndNotify(env);
+      const result = await checkTopArticleAndNotify(env);
       return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
     }
     return new Response("autoshort-push-worker", { status: 200 });
   },
 
   async scheduled(event, env) {
-    await checkForNewArticlesAndNotify(env);
+    await checkTopArticleAndNotify(env);
   },
 };
 
-async function checkForNewArticlesAndNotify(env) {
-  const res = await fetch(RSS_URL);
-  if (!res.ok) return { error: "rss fetch failed", status: res.status };
+// Notifies only about the single most popular story currently available, and
+// only when that story changes — either because a higher-scoring one was
+// published, or because the previous leader dropped out of the feed. A steady
+// stream of minor news therefore produces no notification at all.
+async function checkTopArticleAndNotify(env) {
+  const res = await fetch(NEWS_URL);
+  if (!res.ok) return { error: "news fetch failed", status: res.status };
 
-  const xml = await res.text();
-  const articles = parseRssItems(xml).slice(0, 20);
-  if (articles.length === 0) return { checked: 0, newArticles: 0 };
+  const data = await res.json();
+  const articles = data.articles || [];
+  if (articles.length === 0) return { checked: 0, notified: false };
 
-  const lastSeenRaw = await env.PUSH_KV.get(LAST_SEEN_KEY);
-  const lastSeen = lastSeenRaw ? JSON.parse(lastSeenRaw) : [];
-  const lastSeenSet = new Set(lastSeen);
+  // The endpoint already sorts by popularity, but sorting here keeps the
+  // worker correct even if that ever changes.
+  const top = [...articles].sort((a, b) => (b.popularity || 0) - (a.popularity || 0))[0];
 
-  const newArticles = articles.filter((a) => !lastSeenSet.has(a.link));
+  const previousRaw = await env.PUSH_KV.get(TOP_ARTICLE_KEY);
+  const previous = previousRaw ? JSON.parse(previousRaw) : null;
 
-  // Always refresh the tracked-links window so old articles don't
-  // re-trigger a notification, even on the very first run.
-  const updatedSeen = [...new Set([...articles.map((a) => a.link), ...lastSeen])].slice(0, MAX_TRACKED_LINKS);
-  await env.PUSH_KV.put(LAST_SEEN_KEY, JSON.stringify(updatedSeen));
+  await env.PUSH_KV.put(
+    TOP_ARTICLE_KEY,
+    JSON.stringify({ link: top.link, title: top.title, popularity: top.popularity })
+  );
 
-  // First run ever (no prior state): don't blast a notification for every
-  // existing article, just establish the baseline.
-  if (lastSeenRaw === null) return { checked: articles.length, newArticles: 0, firstRun: true };
-  if (newArticles.length === 0) return { checked: articles.length, newArticles: 0 };
+  // First run ever: establish the baseline without notifying.
+  if (previous === null) {
+    return { checked: articles.length, notified: false, firstRun: true, top: top.title };
+  }
 
-  const subscriptions = await getAllSubscriptions(env);
-  const latest = newArticles[0];
+  // Same leader as last check: nothing to announce.
+  if (previous.link === top.link) {
+    return { checked: articles.length, notified: false, top: top.title };
+  }
+
+  const overtook = (top.popularity || 0) > (previous.popularity || 0);
   const payload = JSON.stringify({
-    title: newArticles.length === 1 ? "Nouvelle actu anime/manga" : `${newArticles.length} nouvelles actus anime/manga`,
-    body: latest.title,
+    title: overtook ? "🔥 Nouvelle actu n°1" : "Nouvelle actu en tête",
+    body: top.title,
     url: "./",
   });
 
   webpush.setVapidDetails(env.VAPID_SUBJECT, env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
 
+  const subscriptions = await getAllSubscriptions(env);
   let sent = 0;
   let removed = 0;
   for (const { key, subscription } of subscriptions) {
@@ -70,7 +82,17 @@ async function checkForNewArticlesAndNotify(env) {
     }
   }
 
-  return { checked: articles.length, newArticles: newArticles.length, subscriptions: subscriptions.length, sent, removed };
+  return {
+    checked: articles.length,
+    notified: true,
+    overtook,
+    top: top.title,
+    score: top.popularity,
+    previousScore: previous.popularity,
+    subscriptions: subscriptions.length,
+    sent,
+    removed,
+  };
 }
 
 async function getAllSubscriptions(env) {
@@ -81,30 +103,4 @@ async function getAllSubscriptions(env) {
     if (raw) subscriptions.push({ key: key.name, subscription: JSON.parse(raw) });
   }
   return subscriptions;
-}
-
-function parseRssItems(xml) {
-  const items = [];
-  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-
-  for (const block of itemBlocks) {
-    const title = extractTag(block, "title");
-    const link = extractTag(block, "link");
-    if (title && link) items.push({ title, link });
-  }
-
-  return items;
-}
-
-function extractTag(block, tag) {
-  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`));
-  if (!match) return "";
-  return match[1]
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, "$1")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .trim();
 }
