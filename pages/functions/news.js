@@ -26,6 +26,78 @@ const EXCLUDE_KEYWORDS = [
 // from actual news — much more reliable than keyword-guessing.
 const OTAKU_USA_EXCLUDE_CATEGORIES = ["review", "interview", "feature", "kickstarter", "op-ed"];
 
+// ---------------------------------------------------------------------------
+// Popularity scoring
+//
+// A short's audience is driven far more by WHICH franchise it covers and WHAT
+// kind of event it is than by how recent the news is, so each article gets a
+// 0-100 score built from three independent signals. None of them costs an
+// extra network request: everything is derived from data already fetched.
+// ---------------------------------------------------------------------------
+
+// Signal 1 — franchise weight. Two tiers, because the gap in reach between a
+// One Piece announcement and a mid-card seasonal show is enormous.
+const FRANCHISES_TIER_S = [
+  "one piece", "jujutsu kaisen", "demon slayer", "kimetsu no yaiba",
+  "chainsaw man", "solo leveling", "attack on titan", "shingeki no kyojin",
+  "my hero academia", "boku no hero", "dragon ball", "naruto", "boruto",
+  "spy x family", "frieren", "dandadan", "sakamoto days", "kaiju no. 8",
+  "bleach", "pokemon", "pokémon",
+];
+const FRANCHISES_TIER_A = [
+  "blue lock", "oshi no ko", "tokyo revengers", "hunter x hunter",
+  "evangelion", "death note", "fullmetal alchemist", "mob psycho",
+  "haikyu", "vinland saga", "made in abyss", "re:zero", "konosuba",
+  "overlord", "mushoku tensei", "wind breaker", "gachiakuta",
+  "one punch man", "fire force", "black clover", "dr. stone",
+  "apothecary diaries", "kusuriya", "blue box", "shangri-la frontier",
+  "ranma", "yu-gi-oh", "digimon", "gintama", "bocchi", "lycoris",
+  "sailor moon", "toilet-bound", "jibaku shounen", "zenshu",
+];
+
+// Signal 2 — event type. Announcements and trailers travel; routine
+// scheduling notes do not.
+const EVENT_WEIGHTS = [
+  [25, ["new season", "season 2", "season 3", "season 4", "season 5", "final season"]],
+  [22, ["anime adaptation", "gets anime", "anime announced", "greenlit"]],
+  [18, ["trailer", "teaser", "first look", "key visual", "pv "]],
+  [16, ["final arc", "finale", "ends", "concludes", "last chapter", "hiatus"]],
+  [14, ["release date", "premiere", "debuts", "returns", "confirmed"]],
+  [12, ["movie", "film", "sequel", "spin-off", "spinoff", "remake"]],
+  [10, ["record", "million", "best-selling", "top ", "biggest", "anniversary"]],
+  [8, ["cast", "voice actor", "studio", "director", "collab"]],
+];
+
+// Signal 3 — cross-source corroboration. When several independent outlets run
+// the same story within the same feed window, that story is genuinely
+// breaking. This used to be thrown away by the deduplication step.
+const SOURCE_CORROBORATION_WEIGHT = 20;
+
+// At or above this score an article counts as "hot" and earns the longer
+// retention window on the client.
+const HOT_SCORE_THRESHOLD = 55;
+
+function scoreArticle(article, sourceCount) {
+  const haystack = `${article.title} ${article.description || ""}`.toLowerCase();
+  let score = 0;
+
+  if (FRANCHISES_TIER_S.some((f) => haystack.includes(f))) score += 40;
+  else if (FRANCHISES_TIER_A.some((f) => haystack.includes(f))) score += 24;
+
+  // Only the strongest matching event type counts, so an article isn't
+  // inflated just for mentioning several stock phrases.
+  for (const [weight, keywords] of EVENT_WEIGHTS) {
+    if (keywords.some((kw) => haystack.includes(kw))) {
+      score += weight;
+      break;
+    }
+  }
+
+  score += Math.min(2, sourceCount - 1) * SOURCE_CORROBORATION_WEIGHT;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
 }
@@ -39,11 +111,15 @@ export async function onRequestGet() {
       fetchOtakuUsaNews(),
     ]);
 
-    const merged = dedupeByTitle(results.flat())
-      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+    // Sorted by popularity first so that when the list is capped at
+    // MAX_ITEMS it's the low-scoring filler that gets cut, not a big
+    // announcement that happened to be a few hours older. The client
+    // regroups by date afterwards.
+    const merged = mergeDuplicates(results.flat())
+      .sort((a, b) => b.popularity - a.popularity || new Date(b.pubDate) - new Date(a.pubDate))
       .slice(0, MAX_ITEMS);
 
-    return json({ articles: merged });
+    return json({ articles: merged, hotThreshold: HOT_SCORE_THRESHOLD });
   } catch (err) {
     return json({ error: "Flux d'actus indisponible", details: err.message || String(err) }, 502);
   }
@@ -153,14 +229,43 @@ function hasExcludedKeyword(title) {
   return EXCLUDE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-function dedupeByTitle(articles) {
-  const seen = new Set();
-  return articles.filter((a) => {
-    const key = a.title.toLowerCase().trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+// Keeps one article per story, but remembers how many distinct outlets ran
+// it — that count feeds the popularity score instead of being discarded.
+// Titles are normalized first so near-identical headlines from different
+// outlets ("Chainsaw Man Season 2 Announced" vs "Chainsaw Man season 2
+// announced!") collapse onto the same story.
+function mergeDuplicates(articles) {
+  const byStory = new Map();
+
+  for (const article of articles) {
+    const key = normalizeTitle(article.title);
+    const existing = byStory.get(key);
+    if (!existing) {
+      byStory.set(key, { article, sources: new Set([article.source]) });
+      continue;
+    }
+    existing.sources.add(article.source);
+    // Prefer whichever copy actually has an image and a real description.
+    if (!existing.article.image && article.image) existing.article.image = article.image;
+    if (!existing.article.description && article.description) {
+      existing.article.description = article.description;
+    }
+  }
+
+  return [...byStory.values()].map(({ article, sources }) => ({
+    ...article,
+    sourceCount: sources.size,
+    popularity: scoreArticle(article, sources.size),
+    hot: scoreArticle(article, sources.size) >= HOT_SCORE_THRESHOLD,
+  }));
+}
+
+function normalizeTitle(title) {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseRssItems(xml) {
