@@ -2958,12 +2958,16 @@ function loadSuggestions() {
 let suggestionsFilter = "all";
 // Kept so switching the filter re-renders instantly instead of refetching.
 let lastArticles = [];
+// The "Populaires" tab must never come back empty: when fewer than this many
+// articles clear the hot threshold, the list is topped up with the next
+// highest-scoring ones so there is always something to generate from.
+const MIN_HOT_ARTICLES = 5;
 
 async function refreshSuggestions() {
-  suggestionsStatus.textContent = "Chargement des actus...";
   suggestionsList.innerHTML = "";
   articleDetail.hidden = true;
   suggestionsList.hidden = false;
+  showListMessage("Chargement des actus...");
 
   try {
     const res = await fetch(`${WORKER_URL}/news`);
@@ -2973,23 +2977,55 @@ async function refreshSuggestions() {
     lastArticles = data.articles || [];
     renderSuggestions();
   } catch (err) {
-    suggestionsStatus.textContent = `Erreur actus : ${err.message}`;
+    suggestionsList.innerHTML = "";
+    showListMessage(`Erreur actus : ${err.message}`);
   }
+}
+
+// Status text lives inside the list, below the filter buttons, so a message
+// always appears exactly where the content it replaces would have been.
+function showListMessage(text) {
+  const msg = document.createElement("p");
+  msg.className = "suggestions-empty";
+  msg.textContent = text;
+  suggestionsList.appendChild(msg);
+}
+
+// Top-scoring articles, never fewer than MIN_HOT_ARTICLES as long as any
+// article exists at all.
+function hotArticles() {
+  const ranked = [...lastArticles].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  const aboveThreshold = ranked.filter((a) => a.hot);
+  return aboveThreshold.length >= MIN_HOT_ARTICLES
+    ? aboveThreshold
+    : ranked.slice(0, MIN_HOT_ARTICLES);
 }
 
 function renderSuggestions() {
   suggestionsList.innerHTML = "";
+  // Left blank: every message is rendered inside the list instead.
+  suggestionsStatus.textContent = "";
   suggestionsList.appendChild(buildFilterBar());
 
-  const pool = suggestionsFilter === "hot" ? lastArticles.filter((a) => a.hot) : lastArticles;
+  const pool = suggestionsFilter === "hot" ? hotArticles() : lastArticles;
   const groups = groupArticlesByDate(pool);
-  const isEmpty = Object.values(groups).every((g) => g.length === 0);
 
-  suggestionsStatus.textContent = isEmpty
-    ? suggestionsFilter === "hot"
-      ? "Aucune actu à fort potentiel pour l'instant."
-      : "Aucune actu disponible pour l'instant."
-    : "";
+  if (Object.values(groups).every((g) => g.length === 0)) {
+    // The date buckets can drop everything if the top articles are older
+    // than the retention window. On the "Populaires" tab that would break
+    // the guarantee that it's never empty, so fall back to the raw ranking.
+    const fallback = suggestionsFilter === "hot" ? hotArticles() : [];
+    if (fallback.length === 0) {
+      showListMessage("Aucune actu disponible pour l'instant.");
+      return;
+    }
+    const heading = document.createElement("h3");
+    heading.className = "suggestions-heading";
+    heading.textContent = "Top actus";
+    suggestionsList.appendChild(heading);
+    fallback.forEach((article) => suggestionsList.appendChild(buildArticleCard(article)));
+    return;
+  }
 
   Object.entries(groups).forEach(([label, articles]) => {
     if (articles.length === 0) return;
@@ -3021,10 +3057,10 @@ function buildFilterBar() {
   const bar = document.createElement("div");
   bar.className = "suggestions-filters";
 
-  const hotCount = lastArticles.filter((a) => a.hot).length;
   const options = [
     { id: "all", label: `Tout (${lastArticles.length})` },
-    { id: "hot", label: `Populaires (${hotCount})` },
+    // Counts what will actually be shown, top-up included.
+    { id: "hot", label: `Populaires (${hotArticles().length})` },
   ];
 
   options.forEach(({ id, label }) => {
