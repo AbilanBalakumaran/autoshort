@@ -17,18 +17,12 @@ export async function onRequestPost({ request, env }) {
   // later than ElevenLabs' alignment timestamps assume — the actual
   // remaining source of subtitle drift even with correct per-word timings.
   // WAV is uncompressed PCM with a plain header, so it decodes sample-exact.
-  // Two names for the same key: the older worker declared it as
-  // VITE_ELEVENLABS_API_KEY. Accept either, so a secret set under the old
-  // name doesn't silently send an empty key and make every request fall
-  // back to the slow voice while blaming a quota.
-  const elevenKey = env.ELEVENLABS_API_KEY || env.VITE_ELEVENLABS_API_KEY;
-
   const elevenRes = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || ELEVENLABS_VOICE_ID}/with-timestamps?output_format=wav_24000`,
     {
       method: "POST",
       headers: {
-        "xi-api-key": elevenKey,
+        "xi-api-key": env.ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -66,12 +60,27 @@ export async function onRequestPost({ request, env }) {
   // Cloudflare Workers AI's free TTS model so a real, downloadable audio
   // file is always produced.
   try {
-    const audioStream = await env.AI.run("@cf/deepgram/aura-1", {
+    const aiResult = await env.AI.run("@cf/deepgram/aura-1", {
       text,
       speaker: "asteria",
       encoding: "mp3",
     });
-    const audioBuffer = await new Response(audioStream).arrayBuffer();
+
+    // Workers AI returns different shapes depending on the model and the
+    // runtime version: a ReadableStream/Response for streamed binary, a raw
+    // ArrayBuffer, or — for the Deepgram models — a plain JSON object with a
+    // base64 "audio" field. Passing that object to new Response() would
+    // stringify it to "[object Object]" and produce a 15-byte file that the
+    // browser reports as a broken track, while the request still looked
+    // successful. Each shape is handled explicitly instead.
+    const audioBuffer = await normalizeAudioResult(aiResult);
+
+    // A real MP3 is tens of kilobytes and starts with an ID3 tag or a frame
+    // sync word. Anything else means the model returned an error payload, so
+    // fail loudly rather than handing the client an unplayable file with a
+    // reassuring "fallback voice used" message.
+    assertPlayableMp3(audioBuffer);
+
     const audioBase64 = bufferToBase64(audioBuffer);
 
     // This TTS model doesn't expose word-level timing, so forced-align the
@@ -79,11 +88,7 @@ export async function onRequestPost({ request, env }) {
     // timestamps for perfect subtitle sync on the fallback voice too.
     const wordTimings = await transcribeWordTimings(audioBuffer, env.GROQ_API_KEY);
 
-    // Say why ElevenLabs was skipped rather than let the page guess: a
-    // missing key and an exhausted quota look the same from the outside,
-    // and only one of the two is worth waiting a month for.
-    const raison = raisonDuRepli(elevenKey, elevenRes.status, elevenErrText);
-    return json({ audioBase64, wordTimings, source: "workers-ai", raison });
+    return json({ audioBase64, wordTimings, source: "workers-ai" });
   } catch (fallbackErr) {
     return json(
       {
@@ -93,20 +98,6 @@ export async function onRequestPost({ request, env }) {
       502
     );
   }
-}
-
-// ElevenLabs répond 401 aussi bien pour une clé invalide que pour un quota
-// dépassé : le statut seul ne tranche pas, et les deux n'appellent pas du tout
-// la même réaction — l'une se répare en une minute, l'autre attend le mois
-// suivant. Le corps de la réponse, lui, porte un code explicite.
-function raisonDuRepli(cle, statut, corps) {
-  if (!cle) return "Clé ElevenLabs absente";
-  const reste = corps.match(/You have (\d+) credits? remaining/i)?.[1];
-  if (/quota_exceeded/.test(corps)) {
-    return `Quota ElevenLabs épuisé${reste ? ` (${reste} crédits restants)` : ""} — il se recharge le mois prochain`;
-  }
-  if (statut === 401) return "Clé ElevenLabs refusée";
-  return `ElevenLabs a répondu ${statut}`;
 }
 
 function computeWordTimings(alignment) {
@@ -171,6 +162,47 @@ async function transcribeWordTimings(audioBuffer, apiKey) {
     // still better than failing the whole audio generation over it.
     return null;
   }
+}
+
+// Turns any of Workers AI's return shapes into a plain ArrayBuffer.
+async function normalizeAudioResult(result) {
+  if (!result) throw new Error("réponse vide du modèle TTS");
+
+  if (result instanceof ArrayBuffer) return result;
+  if (ArrayBuffer.isView(result)) return result.buffer;
+  if (result instanceof Response) return await result.arrayBuffer();
+  if (typeof result.getReader === "function") {
+    // ReadableStream of binary chunks.
+    return await new Response(result).arrayBuffer();
+  }
+
+  // JSON object: the audio sits in a base64 field whose name varies between
+  // models, so try the known ones before giving up.
+  const base64 = result.audio ?? result.audio_base64 ?? result.data;
+  if (typeof base64 === "string" && base64.length > 0) {
+    return base64ToArrayBuffer(base64);
+  }
+
+  throw new Error(`format audio inattendu (${Object.keys(result).join(", ") || typeof result})`);
+}
+
+function assertPlayableMp3(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < 1024) {
+    throw new Error(`audio trop court (${bytes.length} octets) — le modèle a renvoyé une erreur`);
+  }
+  const isId3 = bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33;
+  const isFrameSync = bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
+  if (!isId3 && !isFrameSync) {
+    throw new Error("le flux renvoyé n'est pas un MP3 valide");
+  }
+}
+
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
 }
 
 function bufferToBase64(buffer) {
