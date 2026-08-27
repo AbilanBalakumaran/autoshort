@@ -537,6 +537,67 @@ function base64ToBlob(base64, mimeType) {
   return new Blob([bytes], { type: mimeType });
 }
 
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// Decodes whatever the server sent and re-encodes it as WAV, the one format
+// every browser here plays reliably. decodeAudioData needs its own copy of
+// the buffer because it detaches the one it's given.
+async function transcodeToWavBlob(arrayBuffer) {
+  const ctx = getUnlockedAudioContext();
+  const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+  return new Blob([audioBufferToWav(decoded)], { type: "audio/wav" });
+}
+
+// AudioBuffer -> 16-bit PCM WAV, channels interleaved.
+function audioBufferToWav(audioBuffer) {
+  const channels = Math.min(2, audioBuffer.numberOfChannels);
+  const sampleRate = audioBuffer.sampleRate;
+  const frames = audioBuffer.length;
+  const blockAlign = channels * 2;
+  const dataBytes = frames * blockAlign;
+
+  const out = new Uint8Array(44 + dataBytes);
+  const view = new DataView(out.buffer);
+  const writeAscii = (offset, text) => {
+    for (let i = 0; i < text.length; i++) out[offset + i] = text.charCodeAt(i);
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, "data");
+  view.setUint32(40, dataBytes, true);
+
+  const channelData = [];
+  for (let c = 0; c < channels; c++) channelData.push(audioBuffer.getChannelData(c));
+
+  let offset = 44;
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < channels; c++) {
+      // Clamp before scaling so overshoot doesn't wrap around to the
+      // opposite polarity and click.
+      const sample = Math.max(-1, Math.min(1, channelData[c][i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
+  }
+
+  return out.buffer;
+}
+
 let currentPreviewBtn = null;
 const voicePreviewCache = new Map(); // voiceId -> object URL, avoids re-fetching (and re-spending quota) on repeat plays
 
@@ -579,10 +640,12 @@ async function toggleVoicePreview(voiceId, btn) {
       });
       if (!res.ok) throw new Error("preview failed");
       const data = await res.json();
-      const blob = base64ToBlob(
-        data.audioBase64,
-        data.source === "elevenlabs" || data.format === "wav" ? "audio/wav" : "audio/mpeg"
-      );
+      // Same reason as the narration path: anything that isn't already WAV
+      // is decoded and re-wrapped so Safari will play it.
+      const blob =
+        data.source === "elevenlabs" || data.format === "wav"
+          ? base64ToBlob(data.audioBase64, "audio/wav")
+          : await transcodeToWavBlob(base64ToArrayBuffer(data.audioBase64));
       url = URL.createObjectURL(blob);
       voicePreviewCache.set(cacheKey, url);
     }
@@ -747,12 +810,18 @@ generateAudioBtn.addEventListener("click", async () => {
     // later on doesn't run into MP3 encoder-delay drift; the Workers AI
     // fallback still encodes MP3, which is fine since it has no real
     // per-word timings to keep in sync anyway.
-    // The MIME type follows what the server actually produced: the fallback
-    // now returns WAV too, and labelling a WAV as audio/mpeg is itself enough
-    // for Safari to refuse the file.
-    const audioMime =
-      audioData.source === "elevenlabs" || audioData.format === "wav" ? "audio/wav" : "audio/mpeg";
-    const audioBlob = base64ToBlob(audioData.audioBase64, audioMime);
+    // Safari's <audio> element refuses the MP3 this fallback model produces
+    // (MEDIA_ERR_SRC_NOT_SUPPORTED) even though the file is complete and
+    // valid. decodeAudioData uses a different, more permissive decoder — the
+    // same one the montage already relies on — so anything that isn't
+    // already WAV is decoded and re-wrapped as WAV before it ever reaches
+    // the player. That also guarantees the montage can use it later.
+    let audioBlob;
+    if (audioData.source === "elevenlabs" || audioData.format === "wav") {
+      audioBlob = base64ToBlob(audioData.audioBase64, "audio/wav");
+    } else {
+      audioBlob = await transcodeToWavBlob(base64ToArrayBuffer(audioData.audioBase64));
+    }
 
     // The player must be visible before loading: iOS defers loading media
     // that sits inside a hidden container, which made the previous check
