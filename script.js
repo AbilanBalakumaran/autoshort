@@ -746,22 +746,49 @@ generateAudioBtn.addEventListener("click", async () => {
     // per-word timings to keep in sync anyway.
     const audioBlob = base64ToBlob(audioData.audioBase64, audioData.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
 
-    // The status message below claims a usable voice was produced, so make
-    // the player actually confirm it first: a truncated or malformed file
-    // reaches the browser as a decode error, and reporting success over that
-    // is what previously showed "Error" next to a reassuring message.
+    // The player must be visible before loading: iOS defers loading media
+    // that sits inside a hidden container, which made the previous check
+    // wait on metadata that was never going to arrive.
+    audioWrapper.hidden = false;
     audioPlayer.src = URL.createObjectURL(audioBlob);
+
+    // The status message below claims a usable voice was produced, so the
+    // player has to confirm it first. Only an explicit error event counts as
+    // failure — iOS can legitimately delay metadata until playback starts,
+    // so a slow load is accepted rather than reported as broken.
     await new Promise((resolve, reject) => {
-      audioPlayer.addEventListener("loadedmetadata", () => resolve(), { once: true });
+      const done = setTimeout(resolve, 4000);
+      audioPlayer.addEventListener(
+        "loadedmetadata",
+        () => {
+          clearTimeout(done);
+          resolve();
+        },
+        { once: true }
+      );
       audioPlayer.addEventListener(
         "error",
-        () => reject(new Error("fichier audio illisible")),
+        () => {
+          clearTimeout(done);
+          // MediaError codes: 1 aborted, 2 network, 3 decode, 4 format not
+          // supported. Passing it through turns "illisible" into something
+          // that actually says which layer failed.
+          const code = audioPlayer.error?.code;
+          const label =
+            { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[
+              code
+            ] || `code ${code}`;
+          reject(
+            new Error(
+              `${label} — source ${audioData.source}, ${audioBlob.size} octets, type ${audioBlob.type}`
+            )
+          );
+        },
         { once: true }
       );
       audioPlayer.load();
     });
 
-    audioWrapper.hidden = false;
     notifyStep("Audio prêt", "La narration est générée — passe au choix des images.");
     currentWordTimings = audioData.wordTimings || null;
     status.textContent =
