@@ -885,40 +885,79 @@ generateAudioBtn.addEventListener("click", async () => {
   }
 });
 
-// Reports what the browser makes of the recording without blocking the rest
-// of the flow: a duration and frame size mean the file is genuinely readable,
-// while a MediaError code says which layer refused it.
-function probeVideoPlayback(video) {
-  const timer = setTimeout(() => log("Aperçu vidéo : métadonnées non reçues (lecture différée)"), 6000);
+// Reports what the browser makes of the recording, and repairs the one case
+// that has a known workaround: iOS Safari regularly refuses to play a blob:
+// URL in a <video> element (it wants a source it can byte-range request)
+// even when the exact same file plays fine once downloaded. Re-pointing the
+// element at a data: URL sidesteps that entirely.
+function probeVideoPlayback(video, blob, alreadyRetried = false) {
+  let settled = false;
 
-  video.addEventListener(
-    "loadedmetadata",
-    () => {
-      clearTimeout(timer);
-      const d = video.duration;
-      log(
-        `Aperçu vidéo OK (${Number.isFinite(d) ? d.toFixed(1) + "s" : "durée inconnue"}, ${video.videoWidth}x${video.videoHeight})`
-      );
-      if (!Number.isFinite(d) || d === 0) {
-        log("Durée illisible — le fichier reste téléchargeable et lisible ailleurs");
-      }
-    },
-    { once: true }
-  );
+  const cleanup = () => {
+    clearTimeout(timer);
+    video.removeEventListener("loadedmetadata", onLoaded);
+    video.removeEventListener("error", onError);
+  };
 
-  video.addEventListener(
-    "error",
-    () => {
-      clearTimeout(timer);
-      const code = video.error?.code;
-      const label =
-        { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[
-          code
-        ] || `code ${code}`;
-      log(`Aperçu vidéo impossible (${label}) — essaie le téléchargement, le fichier peut être valide`);
-    },
-    { once: true }
-  );
+  // Retries on a data: URL. Reached both from an explicit error and from the
+  // timeout, because iOS sometimes just leaves the element blank without ever
+  // firing an error event.
+  const retryAsDataUrl = async (reason) => {
+    if (settled) return true;
+    if (alreadyRetried || !blob) return false;
+    settled = true;
+    cleanup();
+    log(`Aperçu refusé via blob: (${reason}) — nouvelle tentative en data:`);
+    try {
+      const dataUrl = await blobToDataUrl(blob);
+      video.src = dataUrl;
+      video.load();
+      probeVideoPlayback(video, null, true);
+    } catch {
+      log("Conversion en data: impossible — le téléchargement reste valide");
+    }
+    return true;
+  };
+
+  const timer = setTimeout(async () => {
+    if (await retryAsDataUrl("pas de métadonnées")) return;
+    log("Aperçu vidéo : métadonnées non reçues (lecture différée)");
+  }, 5000);
+
+  const onLoaded = () => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    const d = video.duration;
+    log(
+      `Aperçu vidéo OK (${Number.isFinite(d) ? d.toFixed(1) + "s" : "durée inconnue"}, ${video.videoWidth}x${video.videoHeight})`
+    );
+  };
+
+  const onError = async () => {
+    if (settled) return;
+    const code = video.error?.code;
+    if (await retryAsDataUrl(`code ${code}`)) return;
+    settled = true;
+    cleanup();
+    const label =
+      { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[
+        code
+      ] || `code ${code}`;
+    log(`Aperçu vidéo impossible (${label}) — le téléchargement reste valide`);
+  };
+
+  video.addEventListener("loadedmetadata", onLoaded);
+  video.addEventListener("error", onError);
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("lecture du blob impossible"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function goToImageStep() {
@@ -1597,11 +1636,9 @@ async function generateMontage() {
     log(`Vidéo assemblée (${recording.blob.size} octets, ${recording.isMp4 ? "mp4" : "webm"})`);
 
     montagePreview.src = URL.createObjectURL(recording.blob);
-    // The file is written; whether this browser can also decode it is a
-    // separate question, and the answer decides whether the preview being
-    // blank means a broken file or just a player limitation. Reported either
-    // way so the download stays usable even when the preview doesn't work.
-    probeVideoPlayback(montagePreview);
+    // The blob URL is tried first (cheap, no copy). If this browser refuses
+    // it, the probe swaps the element over to a data: URL automatically.
+    probeVideoPlayback(montagePreview, recording.blob);
     const videoName = recording.isMp4 ? "sukiamv.mp4" : "sukiamv.webm";
     montageDownload.href = URL.createObjectURL(recording.blob);
     montageDownload.download = videoName;
