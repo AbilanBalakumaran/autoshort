@@ -745,7 +745,22 @@ generateAudioBtn.addEventListener("click", async () => {
     // fallback still encodes MP3, which is fine since it has no real
     // per-word timings to keep in sync anyway.
     const audioBlob = base64ToBlob(audioData.audioBase64, audioData.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
+
+    // The status message below claims a usable voice was produced, so make
+    // the player actually confirm it first: a truncated or malformed file
+    // reaches the browser as a decode error, and reporting success over that
+    // is what previously showed "Error" next to a reassuring message.
     audioPlayer.src = URL.createObjectURL(audioBlob);
+    await new Promise((resolve, reject) => {
+      audioPlayer.addEventListener("loadedmetadata", () => resolve(), { once: true });
+      audioPlayer.addEventListener(
+        "error",
+        () => reject(new Error("fichier audio illisible")),
+        { once: true }
+      );
+      audioPlayer.load();
+    });
+
     audioWrapper.hidden = false;
     notifyStep("Audio prêt", "La narration est générée — passe au choix des images.");
     currentWordTimings = audioData.wordTimings || null;
