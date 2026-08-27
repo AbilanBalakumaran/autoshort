@@ -885,6 +885,42 @@ generateAudioBtn.addEventListener("click", async () => {
   }
 });
 
+// Reports what the browser makes of the recording without blocking the rest
+// of the flow: a duration and frame size mean the file is genuinely readable,
+// while a MediaError code says which layer refused it.
+function probeVideoPlayback(video) {
+  const timer = setTimeout(() => log("Aperçu vidéo : métadonnées non reçues (lecture différée)"), 6000);
+
+  video.addEventListener(
+    "loadedmetadata",
+    () => {
+      clearTimeout(timer);
+      const d = video.duration;
+      log(
+        `Aperçu vidéo OK (${Number.isFinite(d) ? d.toFixed(1) + "s" : "durée inconnue"}, ${video.videoWidth}x${video.videoHeight})`
+      );
+      if (!Number.isFinite(d) || d === 0) {
+        log("Durée illisible — le fichier reste téléchargeable et lisible ailleurs");
+      }
+    },
+    { once: true }
+  );
+
+  video.addEventListener(
+    "error",
+    () => {
+      clearTimeout(timer);
+      const code = video.error?.code;
+      const label =
+        { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[
+          code
+        ] || `code ${code}`;
+      log(`Aperçu vidéo impossible (${label}) — essaie le téléchargement, le fichier peut être valide`);
+    },
+    { once: true }
+  );
+}
+
 function goToImageStep() {
   imageStep.hidden = false;
   document.querySelector("main").classList.add("wide");
@@ -1561,6 +1597,11 @@ async function generateMontage() {
     log(`Vidéo assemblée (${recording.blob.size} octets, ${recording.isMp4 ? "mp4" : "webm"})`);
 
     montagePreview.src = URL.createObjectURL(recording.blob);
+    // The file is written; whether this browser can also decode it is a
+    // separate question, and the answer decides whether the preview being
+    // blank means a broken file or just a player limitation. Reported either
+    // way so the download stays usable even when the preview doesn't work.
+    probeVideoPlayback(montagePreview);
     const videoName = recording.isMp4 ? "sukiamv.mp4" : "sukiamv.webm";
     montageDownload.href = URL.createObjectURL(recording.blob);
     montageDownload.download = videoName;
@@ -1996,11 +2037,15 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
     source.connect(dest);
 
     const videoStream = montageCanvas.captureStream(30);
-    log(`Flux canvas capturé (${videoStream.getVideoTracks().length} piste vidéo)`);
-    const combinedStream = new MediaStream([
-      ...videoStream.getVideoTracks(),
-      ...dest.stream.getAudioTracks(),
-    ]);
+    const audioTracks = dest.stream.getAudioTracks();
+    log(
+      `Flux capturé : ${videoStream.getVideoTracks().length} piste vidéo, ${audioTracks.length} piste audio`
+    );
+    // Declaring an audio codec in the mimeType while handing MediaRecorder a
+    // stream with no audio track is a known way to end up with a file players
+    // reject, so the absence is worth flagging rather than silently recording.
+    if (audioTracks.length === 0) log("ATTENTION : aucune piste audio dans le flux");
+    const combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...audioTracks]);
 
     const candidates = [
       "video/mp4;codecs=avc1,mp4a",
