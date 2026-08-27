@@ -2029,7 +2029,15 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
     recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
     recorder.onstop = () => {
       clearTimeout(safetyTimer);
-      resolve({ blob: new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" }), isMp4 });
+      const blob = new Blob(chunks, { type: isMp4 ? "video/mp4" : "video/webm" });
+      // An empty or near-empty file means the muxer produced nothing usable;
+      // surfacing that is far more useful than handing the page a video
+      // element that just shows a broken play button.
+      if (blob.size < 10000) {
+        reject(new Error(`enregistrement vide (${blob.size} octets, ${chunks.length} morceau(x))`));
+        return;
+      }
+      resolve({ blob, isMp4 });
     };
     recorder.onerror = (e) => {
       clearTimeout(safetyTimer);
@@ -2090,9 +2098,15 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
       rafId = requestAnimationFrame(draw);
     }
 
-    // A timeslice makes Safari flush chunks as it goes instead of holding
-    // everything until stop(), where a long recording can come back empty.
-    recorder.start(1000);
+    // A timeslice makes Safari flush chunks as it goes, which protects long
+    // WebM recordings from coming back empty. It must NOT be used for MP4:
+    // Safari then emits a fragmented file whose initialization header sits
+    // only in the first chunk, and the concatenated result is unplayable.
+    if (isMp4) {
+      recorder.start();
+    } else {
+      recorder.start(1000);
+    }
     source.start(startAt);
     draw();
   });
