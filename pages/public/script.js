@@ -579,7 +579,10 @@ async function toggleVoicePreview(voiceId, btn) {
       });
       if (!res.ok) throw new Error("preview failed");
       const data = await res.json();
-      const blob = base64ToBlob(data.audioBase64, data.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
+      const blob = base64ToBlob(
+        data.audioBase64,
+        data.source === "elevenlabs" || data.format === "wav" ? "audio/wav" : "audio/mpeg"
+      );
       url = URL.createObjectURL(blob);
       voicePreviewCache.set(cacheKey, url);
     }
@@ -744,7 +747,12 @@ generateAudioBtn.addEventListener("click", async () => {
     // later on doesn't run into MP3 encoder-delay drift; the Workers AI
     // fallback still encodes MP3, which is fine since it has no real
     // per-word timings to keep in sync anyway.
-    const audioBlob = base64ToBlob(audioData.audioBase64, audioData.source === "elevenlabs" ? "audio/wav" : "audio/mpeg");
+    // The MIME type follows what the server actually produced: the fallback
+    // now returns WAV too, and labelling a WAV as audio/mpeg is itself enough
+    // for Safari to refuse the file.
+    const audioMime =
+      audioData.source === "elevenlabs" || audioData.format === "wav" ? "audio/wav" : "audio/mpeg";
+    const audioBlob = base64ToBlob(audioData.audioBase64, audioMime);
 
     // The player must be visible before loading: iOS defers loading media
     // that sits inside a hidden container, which made the previous check
