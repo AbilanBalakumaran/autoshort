@@ -1,5 +1,9 @@
 import { ELEVENLABS_VOICE_ID, json, corsHeaders } from "./_utils.js";
 
+// Matches the rate requested from the fallback TTS model; used to build the
+// WAV header when the model hands back bare PCM.
+const FALLBACK_SAMPLE_RATE = 24000;
+
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
 }
@@ -60,10 +64,16 @@ export async function onRequestPost({ request, env }) {
   // Cloudflare Workers AI's free TTS model so a real, downloadable audio
   // file is always produced.
   try {
+    // linear16 (raw PCM) rather than mp3: iOS Safari rejects the MP3 this
+    // model produces with MEDIA_ERR_SRC_NOT_SUPPORTED even though the file is
+    // complete and carries a valid frame header. WAV is what the ElevenLabs
+    // path already returns and plays fine on the same device, so the fallback
+    // now lands in the same container instead of a second, flakier one.
     const aiResult = await env.AI.run("@cf/deepgram/aura-1", {
       text,
       speaker: "asteria",
-      encoding: "mp3",
+      encoding: "linear16",
+      sample_rate: FALLBACK_SAMPLE_RATE,
     });
 
     // Workers AI returns different shapes depending on the model and the
@@ -75,13 +85,15 @@ export async function onRequestPost({ request, env }) {
     // successful. Each shape is handled explicitly instead.
     const audioBuffer = await normalizeAudioResult(aiResult);
 
-    // A real MP3 is tens of kilobytes and starts with an ID3 tag or a frame
-    // sync word. Anything else means the model returned an error payload, so
-    // fail loudly rather than handing the client an unplayable file with a
+    // Anything under a kilobyte is an error payload rather than speech, so
+    // fail loudly instead of handing the client an unplayable file with a
     // reassuring "fallback voice used" message.
-    assertPlayableMp3(audioBuffer);
+    assertNotEmpty(audioBuffer);
 
-    const audioBase64 = bufferToBase64(audioBuffer);
+    // The model may honour linear16 or fall back to a container of its own,
+    // so the bytes decide the format, not the request.
+    const { buffer: playableBuffer, format } = toPlayableAudio(audioBuffer);
+    const audioBase64 = bufferToBase64(playableBuffer);
 
     // This TTS model doesn't expose word-level timing, so forced-align the
     // actual generated audio via Whisper (Groq) to still get real per-word
@@ -133,10 +145,15 @@ function computeWordTimings(alignment) {
   return { words, startTimes };
 }
 
-async function transcribeWordTimings(audioBuffer, apiKey) {
+async function transcribeWordTimings(audioBuffer, format, apiKey) {
   try {
     const form = new FormData();
-    form.append("file", new Blob([audioBuffer], { type: "audio/mpeg" }), "audio.mp3");
+    const isWav = format === "wav";
+    form.append(
+      "file",
+      new Blob([audioBuffer], { type: isWav ? "audio/wav" : "audio/mpeg" }),
+      isWav ? "audio.wav" : "audio.mp3"
+    );
     form.append("model", "whisper-large-v3-turbo");
     form.append("response_format", "verbose_json");
     form.append("timestamp_granularities[]", "word");
@@ -188,16 +205,57 @@ async function normalizeAudioResult(result) {
   throw new Error(`format audio inattendu (${Object.keys(result).join(", ") || typeof result})`);
 }
 
-function assertPlayableMp3(buffer) {
+function assertNotEmpty(buffer) {
   const bytes = new Uint8Array(buffer);
   if (bytes.length < 1024) {
     throw new Error(`audio trop court (${bytes.length} octets) — le modèle a renvoyé une erreur`);
   }
+}
+
+// Identifies what the model actually returned and guarantees a container the
+// browser will accept: already-wrapped WAV passes through, MP3 passes through,
+// and bare PCM samples get a RIFF header built around them.
+function toPlayableAudio(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const isRiff = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+  if (isRiff) return { buffer, format: "wav" };
+
   const isId3 = bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33;
   const isFrameSync = bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
-  if (!isId3 && !isFrameSync) {
-    throw new Error("le flux renvoyé n'est pas un MP3 valide");
-  }
+  if (isId3 || isFrameSync) return { buffer, format: "mp3" };
+
+  return { buffer: wrapPcmInWav(buffer, FALLBACK_SAMPLE_RATE, 1), format: "wav" };
+}
+
+// Minimal 44-byte RIFF/WAVE header for 16-bit little-endian PCM.
+function wrapPcmInWav(pcmBuffer, sampleRate, channels) {
+  const pcm = new Uint8Array(pcmBuffer);
+  const bytesPerSample = 2;
+  const blockAlign = channels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const out = new Uint8Array(44 + pcm.length);
+  const view = new DataView(out.buffer);
+
+  const writeAscii = (offset, text) => {
+    for (let i = 0; i < text.length; i++) out[offset + i] = text.charCodeAt(i);
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM subchunk size
+  view.setUint16(20, 1, true); // format 1 = PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 8 * bytesPerSample, true);
+  writeAscii(36, "data");
+  view.setUint32(40, pcm.length, true);
+  out.set(pcm, 44);
+
+  return out.buffer;
 }
 
 function base64ToArrayBuffer(base64) {
