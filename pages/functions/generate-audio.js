@@ -88,7 +88,9 @@ export async function onRequestPost({ request, env }) {
     // timestamps for perfect subtitle sync on the fallback voice too.
     const wordTimings = await transcribeWordTimings(audioBuffer, env.GROQ_API_KEY);
 
-    return json({ audioBase64, wordTimings, source: "workers-ai" });
+    // Byte size is echoed back so a truncated file can be told apart from a
+    // format the browser simply refuses to play.
+    return json({ audioBase64, wordTimings, source: "workers-ai", bytes: audioBuffer.byteLength });
   } catch (fallbackErr) {
     return json(
       {
