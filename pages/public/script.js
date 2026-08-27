@@ -548,7 +548,7 @@ function base64ToArrayBuffer(base64) {
 // every browser here plays reliably. decodeAudioData needs its own copy of
 // the buffer because it detaches the one it's given.
 async function transcodeToWavBlob(arrayBuffer) {
-  const ctx = getUnlockedAudioContext();
+  const ctx = await getUnlockedAudioContext();
   const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
   return new Blob([audioBufferToWav(decoded)], { type: "audio/wav" });
 }
@@ -1558,45 +1558,60 @@ function speakWithBrowser(text) {
 
 // Shared AudioContext for the montage, created during the click gesture.
 let montageAudioCtx = null;
+// iOS caps how many AudioContexts a page may create, and exhausted ones stay
+// suspended forever — so at most one replacement is ever attempted.
+let audioCtxReplaced = false;
 
 // Safari only allows an AudioContext to leave the "suspended" state from
-// inside a user gesture. Calling resume() plus playing a silent 1-sample
-// buffer synchronously during the click is the standard way to unlock it,
-// after which the context stays running for the rest of the session.
-function getUnlockedAudioContext() {
+// inside a user gesture. resume() plus a silent 1-sample buffer, called
+// synchronously during the click, is the standard unlock.
+//
+// resume() resolves asynchronously, so its result has to be awaited before
+// the state means anything: checking immediately after the call always reads
+// "suspended" and would condemn a context that was about to start.
+async function getUnlockedAudioContext() {
   if (!montageAudioCtx || montageAudioCtx.state === "closed") {
     montageAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
-  montageAudioCtx.resume().catch(() => {});
-  try {
-    const silent = montageAudioCtx.createBufferSource();
-    silent.buffer = montageAudioCtx.createBuffer(1, 1, montageAudioCtx.sampleRate);
-    silent.connect(montageAudioCtx.destination);
-    silent.start(0);
-  } catch {
-    /* unlock is best-effort; the state is re-checked before recording */
-  }
 
-  // iOS can leave a context permanently stuck in "suspended" after an
-  // interruption (Low Power Mode, a call, the ringer switch). A context in
-  // that state never recovers, so a fresh one is built while the click's
-  // gesture is still valid — that one starts clean and can be unlocked.
-  if (montageAudioCtx.state === "suspended") {
-    try {
-      const replacement = new (window.AudioContext || window.webkitAudioContext)();
-      replacement.resume().catch(() => {});
-      const silent = replacement.createBufferSource();
-      silent.buffer = replacement.createBuffer(1, 1, replacement.sampleRate);
-      silent.connect(replacement.destination);
-      silent.start(0);
-      montageAudioCtx.close().catch(() => {});
-      montageAudioCtx = replacement;
-    } catch {
-      /* keep the original context; state is re-checked before recording */
-    }
+  await unlockContext(montageAudioCtx);
+  if (montageAudioCtx.state === "running" || audioCtxReplaced) return montageAudioCtx;
+
+  // iOS can leave a context permanently stuck after an interruption (Low
+  // Power Mode, a call, the ringer switch); such a context never recovers, so
+  // one fresh attempt is made. Only one, ever, to avoid burning through the
+  // per-page context budget and making things worse.
+  audioCtxReplaced = true;
+  try {
+    const replacement = new (window.AudioContext || window.webkitAudioContext)();
+    await unlockContext(replacement);
+    montageAudioCtx.close().catch(() => {});
+    montageAudioCtx = replacement;
+  } catch {
+    /* keep the original; the state is re-checked before recording */
   }
 
   return montageAudioCtx;
+}
+
+// Coming back to the foreground is a fresh chance for iOS to allow audio, so
+// the one-replacement budget is handed back at that point.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") audioCtxReplaced = false;
+});
+
+async function unlockContext(ctx) {
+  try {
+    const silent = ctx.createBufferSource();
+    silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    silent.connect(ctx.destination);
+    silent.start(0);
+  } catch {
+    /* best effort */
+  }
+  // Raced rather than plainly awaited: when Safari refuses to start a context
+  // it returns a promise that never settles at all.
+  await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 1200))]);
 }
 
 async function generateMontage() {
@@ -1615,7 +1630,9 @@ async function generateMontage() {
   // many awaits away from the click — a context created there can never be
   // resumed, leaving the recording silent (or stalled on a resume() that
   // never settles).
-  montageAudioCtx = getUnlockedAudioContext();
+  // Awaited so the unlock has actually resolved before the long async work
+  // (image loading, audio fetch) begins.
+  await getUnlockedAudioContext();
 
   montageBtn.disabled = true;
   // Encoding runs on this device: if the phone sleeps the page is frozen and
