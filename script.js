@@ -1574,8 +1574,28 @@ function getUnlockedAudioContext() {
     silent.connect(montageAudioCtx.destination);
     silent.start(0);
   } catch {
-    /* unlock is best-effort; the draw loop falls back to the wall clock */
+    /* unlock is best-effort; the state is re-checked before recording */
   }
+
+  // iOS can leave a context permanently stuck in "suspended" after an
+  // interruption (Low Power Mode, a call, the ringer switch). A context in
+  // that state never recovers, so a fresh one is built while the click's
+  // gesture is still valid — that one starts clean and can be unlocked.
+  if (montageAudioCtx.state === "suspended") {
+    try {
+      const replacement = new (window.AudioContext || window.webkitAudioContext)();
+      replacement.resume().catch(() => {});
+      const silent = replacement.createBufferSource();
+      silent.buffer = replacement.createBuffer(1, 1, replacement.sampleRate);
+      silent.connect(replacement.destination);
+      silent.start(0);
+      montageAudioCtx.close().catch(() => {});
+      montageAudioCtx = replacement;
+    } catch {
+      /* keep the original context; state is re-checked before recording */
+    }
+  }
+
   return montageAudioCtx;
 }
 
@@ -2057,9 +2077,19 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
       audioCtx.resume().catch(() => {}),
       new Promise((r) => setTimeout(r, 1000)),
     ]);
-    if (audioCtx.state !== "running") {
-      log("Contexte audio non réveillé — bascule sur l'horloge système");
-    }
+  }
+
+  // A suspended context hands MediaRecorder an audio track that never
+  // produces a single sample, and Safari then muxes nothing at all: the
+  // recorder runs for the full duration and stops with zero chunks. The wall
+  // clock keeps the loop terminating, but it cannot bring the audio back — so
+  // fail now, with something the user can act on, instead of spending the
+  // whole recording to hand back an empty file.
+  if (audioCtx.state !== "running") {
+    log(`Contexte audio bloqué (${audioCtx.state}) — enregistrement annulé`);
+    throw new Error(
+      "le son est bloqué par le navigateur (mode économie d'énergie, sonnerie coupée ou app en arrière-plan) — touche l'écran, désactive l'économie d'énergie, puis relance le montage"
+    );
   }
 
   return new Promise((resolve, reject) => {
