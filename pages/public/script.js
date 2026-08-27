@@ -1583,9 +1583,12 @@ async function getUnlockedAudioContext() {
   // per-page context budget and making things worse.
   audioCtxReplaced = true;
   try {
+    // Closed BEFORE the replacement is created: on iOS the per-page budget is
+    // only handed back when a context is explicitly closed, so allocating
+    // first would just consume another slot.
+    await montageAudioCtx.close().catch(() => {});
     const replacement = new (window.AudioContext || window.webkitAudioContext)();
     await unlockContext(replacement);
-    montageAudioCtx.close().catch(() => {});
     montageAudioCtx = replacement;
   } catch {
     /* keep the original; the state is re-checked before recording */
@@ -1664,7 +1667,13 @@ async function generateMontage() {
     status.textContent = "Chargement de l'audio...";
     const audioBlob = await fetch(audioPlayer.src).then((r) => r.blob());
     log(`Audio récupéré (${audioBlob.size} octets)`);
-    const audioBuffer = await new AudioContext().decodeAudioData(await audioBlob.arrayBuffer());
+    // Decoding reuses the shared montage context instead of creating one per
+    // run. iOS caps how many AudioContexts a page may hold and never frees an
+    // abandoned one, so a per-run context quietly exhausted that budget after
+    // a handful of montages — after which every new context, including the
+    // recording one, is born suspended and never starts.
+    const decodeCtx = await getUnlockedAudioContext();
+    const audioBuffer = await decodeCtx.decodeAudioData(await audioBlob.arrayBuffer());
     log(`Audio décodé (${audioBuffer.duration.toFixed(1)}s)`);
 
     status.textContent = "Enregistrement du montage...";
@@ -2071,9 +2080,9 @@ async function encodeAudioTrack(audioEncoder, audioBuffer, numberOfChannels) {
 // MediaRecorder. Produces a less universally compatible file, but it's better
 // than no video at all.
 async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimings) {
-  // Reuse the context unlocked during the click; only build a fresh one if
-  // this path is somehow reached without going through generateMontage().
-  const audioCtx = montageAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  // Always the shared, already-unlocked context — never a new one, which on
+  // iOS would count against the per-page budget and start suspended.
+  const audioCtx = await getUnlockedAudioContext();
 
   // iOS Safari starts an AudioContext in the "suspended" state whenever it's
   // created outside a user gesture — which is the case here, since the context
