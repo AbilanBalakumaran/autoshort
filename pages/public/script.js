@@ -37,6 +37,8 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   download:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
+  pencil:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>',
   grip:
@@ -69,10 +71,13 @@ function iconLabel(iconName, label) {
   return `<span class="icon">${ICONS[iconName]}</span><span>${label}</span>`;
 }
 
+const mainEl = document.querySelector("main");
 const form = document.getElementById("prompt-form");
 const promptInput = document.getElementById("prompt");
 const resultSection = document.getElementById("result");
 const scriptOutput = document.getElementById("script-output");
+const scriptHint = document.getElementById("script-hint");
+const editScriptBtn = document.getElementById("edit-script-btn");
 const durationEstimate = document.getElementById("duration-estimate");
 const status = document.getElementById("status");
 const clearBtn = document.getElementById("clear-btn");
@@ -391,7 +396,8 @@ function updateNotificationsUi(subscribed) {
 }
 
 function initButtons() {
-  generateAudioBtn.innerHTML = iconLabel("speaker", "Générer l'audio");
+  editScriptBtn.innerHTML = iconLabel("pencil", "Modifier le script");
+  setScriptLocked(false);
   continueToImagesBtn.innerHTML = iconLabel("film", "Continuer vers les images");
   regenerateImagesBtn.innerHTML = iconLabel("refresh", "Régénérer");
   montageBtn.innerHTML = iconLabel("film", "Générer le montage");
@@ -419,7 +425,6 @@ function updateConfirmLabel() {
 
 function initTabs() {
   const tabButtons = document.querySelectorAll(".tab-btn");
-  const mainEl = document.querySelector("main");
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       // Tapping the tab you're already on acts as "back", the way every
@@ -520,14 +525,27 @@ function addVoiceCard(voice) {
     // Persist immediately — voice choice must not depend on also clicking
     // "Enregistrer" (which is for the template), or the selection silently
     // has no effect on the next generation.
-    if (selectedVoiceId) {
-      localStorage.setItem(VOICE_STORAGE_KEY, selectedVoiceId);
-    } else {
-      localStorage.removeItem(VOICE_STORAGE_KEY);
-    }
+    persistSelectedVoice();
   });
 
   voiceList.appendChild(card);
+}
+
+// MediaError codes: 1 aborted, 2 network, 3 decode, 4 format not supported.
+// Naming them turns "illisible" into something that says which layer failed.
+function mediaErrorLabel(code) {
+  return (
+    { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[code] ||
+    `code ${code}`
+  );
+}
+
+function persistSelectedVoice() {
+  if (selectedVoiceId) {
+    localStorage.setItem(VOICE_STORAGE_KEY, selectedVoiceId);
+  } else {
+    localStorage.removeItem(VOICE_STORAGE_KEY);
+  }
 }
 
 function base64ToBlob(base64, mimeType) {
@@ -665,11 +683,7 @@ async function toggleVoicePreview(voiceId, btn) {
 saveTemplateBtn.addEventListener("click", () => {
   localStorage.setItem(TEMPLATE_STORAGE_KEY, templateInput.value);
   localStorage.setItem(DURATION_STORAGE_KEY, durationInput.value || DEFAULT_DURATION);
-  if (selectedVoiceId) {
-    localStorage.setItem(VOICE_STORAGE_KEY, selectedVoiceId);
-  } else {
-    localStorage.removeItem(VOICE_STORAGE_KEY);
-  }
+  persistSelectedVoice();
   settingsStatus.textContent = "Template enregistré.";
   setTimeout(() => (settingsStatus.textContent = ""), 2000);
 });
@@ -685,30 +699,62 @@ resetTemplateBtn.addEventListener("click", () => {
   setTimeout(() => (settingsStatus.textContent = ""), 2000);
 });
 
-promptInput.addEventListener("input", () => {
-  currentSuggestionImage = "";
-});
+// --- Voice script editing -------------------------------------------------
+// The generated script is editable so typos in proper nouns (show titles,
+// character names) can be fixed before the voice-over reads them out loud.
 
-clearBtn.addEventListener("click", () => {
-  promptInput.value = "";
-  currentSuggestionImage = "";
-  resultSection.hidden = true;
-  audioWrapper.hidden = true;
+function autoGrowScript() {
+  scriptOutput.style.height = "auto";
+  scriptOutput.style.height = `${Math.max(scriptOutput.scrollHeight, 80)}px`;
+}
+
+function updateDurationEstimate() {
+  durationEstimate.textContent = currentVoiceScript
+    ? `Durée estimée : ~${estimateDuration(currentVoiceScript)}s`
+    : "";
+  generateAudioBtn.disabled = !currentVoiceScript;
+}
+
+function setVoiceScript(text) {
+  currentVoiceScript = (text || "").trim();
+  scriptOutput.value = currentVoiceScript;
+  autoGrowScript();
+  updateDurationEstimate();
+}
+
+// Once a narration exists it belongs to this exact text — the audio and the
+// word timings the subtitles are drawn from would drift the moment a word
+// changed — so the script is frozen until the user explicitly unlocks it.
+function setScriptLocked(locked) {
+  scriptOutput.readOnly = locked;
+  scriptOutput.classList.toggle("locked", locked);
+  editScriptBtn.hidden = !locked;
+  // Once a take exists the button re-rolls it (useful after switching voice
+  // in the settings) rather than producing the first one.
+  generateAudioBtn.innerHTML = locked
+    ? iconLabel("refresh", "Regénérer l'audio")
+    : iconLabel("speaker", "Générer l'audio");
+  scriptHint.textContent = locked
+    ? "Script verrouillé : la narration correspond exactement à ce texte."
+    : "Relis le script et corrige les fautes (noms propres, titres…) avant de générer l'audio.";
+}
+
+// Everything past the script — narration, word timings, images, timeline,
+// montage, publication — is derived from it, so any change invalidates the
+// whole chain. This is the single place that tears it back down.
+function resetAudioAndBeyond() {
+  if (audioPlayer.src.startsWith("blob:")) URL.revokeObjectURL(audioPlayer.src);
   audioPlayer.removeAttribute("src");
-  imageStep.hidden = true;
-  status.textContent = "";
-  durationEstimate.textContent = "";
-  currentVoiceScript = "";
-  currentVisualStyle = "";
-  currentShowName = "";
-  currentCharacters = [];
-  currentRealEntities = [];
+  audioWrapper.hidden = true;
   currentWordTimings = null;
+  setScriptLocked(false);
+  imageStep.hidden = true;
+  mainEl.classList.remove("wide");
+  imageGrid.innerHTML = "";
   selectedImages = [];
   imagePool = [];
   imageReserve = [];
   imageSearchPage = 1;
-  imageGrid.innerHTML = "";
   timelineStep.hidden = true;
   timelineList.innerHTML = "";
   montageBtn.hidden = true;
@@ -717,6 +763,39 @@ clearBtn.addEventListener("click", () => {
   currentProject = null;
   publishPanel.innerHTML = "";
   updateConfirmLabel();
+}
+
+scriptOutput.addEventListener("input", () => {
+  currentVoiceScript = scriptOutput.value.trim();
+  autoGrowScript();
+  updateDurationEstimate();
+});
+
+editScriptBtn.addEventListener("click", () => {
+  const confirmed = confirm(
+    "Modifier le script supprimera la narration déjà générée (ainsi que les images et le montage en cours). Continuer ?"
+  );
+  if (!confirmed) return;
+  resetAudioAndBeyond();
+  status.textContent = "Script déverrouillé — regénère l'audio une fois tes corrections faites.";
+  scriptOutput.focus();
+});
+
+promptInput.addEventListener("input", () => {
+  currentSuggestionImage = "";
+});
+
+clearBtn.addEventListener("click", () => {
+  promptInput.value = "";
+  currentSuggestionImage = "";
+  resultSection.hidden = true;
+  status.textContent = "";
+  setVoiceScript("");
+  currentVisualStyle = "";
+  currentShowName = "";
+  currentCharacters = [];
+  currentRealEntities = [];
+  resetAudioAndBeyond();
   promptInput.focus();
 });
 
@@ -730,23 +809,7 @@ form.addEventListener("submit", async (e) => {
   button.disabled = true;
   status.textContent = "Génération du script en cours...";
   resultSection.hidden = true;
-  audioWrapper.hidden = true;
-  audioPlayer.removeAttribute("src");
-  imageStep.hidden = true;
-  montageBtn.hidden = true;
-  montageResult.hidden = true;
-  thumbnailStep.hidden = true;
-  currentProject = null;
-  publishPanel.innerHTML = "";
-  selectedImages = [];
-  imagePool = [];
-  imageReserve = [];
-  imageSearchPage = 1;
-  currentWordTimings = null;
-  imageGrid.innerHTML = "";
-  timelineStep.hidden = true;
-  timelineList.innerHTML = "";
-  updateConfirmLabel();
+  resetAudioAndBeyond();
 
   try {
     const template = localStorage.getItem(TEMPLATE_STORAGE_KEY) || undefined;
@@ -764,18 +827,16 @@ form.addEventListener("submit", async (e) => {
       throw new Error(data.error || "Erreur inconnue");
     }
 
-    scriptOutput.textContent = data.voiceScript || "(aucun script vocal extrait)";
-    currentVoiceScript = data.voiceScript || "";
     currentVisualStyle = data.visualStyle || "";
     currentShowName = data.showName || "";
     currentCharacters = data.characters || [];
     currentRealEntities = data.realEntities || [];
+    // Unhidden first: a hidden textarea has no scrollHeight, so autoGrowScript()
+    // inside setVoiceScript() would collapse it to a single line.
     resultSection.hidden = false;
-    durationEstimate.textContent = currentVoiceScript
-      ? `Durée estimée : ~${estimateDuration(currentVoiceScript)}s`
-      : "";
+    setVoiceScript(data.voiceScript);
     status.textContent = "";
-    notifyStep("Script prêt", "Le script vocal est généré — tu peux lancer l'audio.");
+    notifyStep("Script prêt", "Le script vocal est généré — corrige-le si besoin, puis lance l'audio.");
   } catch (err) {
     status.textContent = `Erreur : ${err.message}`;
   } finally {
@@ -827,6 +888,8 @@ generateAudioBtn.addEventListener("click", async () => {
     // that sits inside a hidden container, which made the previous check
     // wait on metadata that was never going to arrive.
     audioWrapper.hidden = false;
+    // Regenerating replaces the previous take; release its blob URL first.
+    if (audioPlayer.src.startsWith("blob:")) URL.revokeObjectURL(audioPlayer.src);
     audioPlayer.src = URL.createObjectURL(audioBlob);
 
     // The status message below claims a usable voice was produced, so the
@@ -847,14 +910,7 @@ generateAudioBtn.addEventListener("click", async () => {
         "error",
         () => {
           clearTimeout(done);
-          // MediaError codes: 1 aborted, 2 network, 3 decode, 4 format not
-          // supported. Passing it through turns "illisible" into something
-          // that actually says which layer failed.
-          const code = audioPlayer.error?.code;
-          const label =
-            { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[
-              code
-            ] || `code ${code}`;
+          const label = mediaErrorLabel(audioPlayer.error?.code);
           reject(
             new Error(
               `${label} — source ${audioData.source}, ${audioBlob.size} octets, type ${audioBlob.type}`
@@ -866,6 +922,11 @@ generateAudioBtn.addEventListener("click", async () => {
       audioPlayer.load();
     });
 
+    // The narration — and the word timings the subtitles are drawn from —
+    // belong to this exact text, so the script is frozen from here on.
+    // "Modifier le script" is the deliberate way out, and it discards the
+    // audio so the two can never drift apart.
+    setScriptLocked(true);
     notifyStep("Audio prêt", "La narration est générée — passe au choix des images.");
     currentWordTimings = audioData.wordTimings || null;
     status.textContent =
@@ -879,7 +940,7 @@ generateAudioBtn.addEventListener("click", async () => {
     status.textContent = `Audio indisponible (${err.message}). La voix du navigateur va la lire à titre d'aperçu, réessaie avant de continuer.`;
     speakWithBrowser(currentVoiceScript);
   } finally {
-    generateAudioBtn.disabled = false;
+    generateAudioBtn.disabled = !currentVoiceScript;
     isGenerating = false;
     releaseAwake();
   }
@@ -940,11 +1001,7 @@ function probeVideoPlayback(video, blob, alreadyRetried = false) {
     if (await retryAsDataUrl(`code ${code}`)) return;
     settled = true;
     cleanup();
-    const label =
-      { 1: "lecture interrompue", 2: "erreur réseau", 3: "décodage impossible", 4: "format non supporté" }[
-        code
-      ] || `code ${code}`;
-    log(`Aperçu vidéo impossible (${label}) — le téléchargement reste valide`);
+    log(`Aperçu vidéo impossible (${mediaErrorLabel(code)}) — le téléchargement reste valide`);
   };
 
   video.addEventListener("loadedmetadata", onLoaded);
@@ -962,7 +1019,7 @@ function blobToDataUrl(blob) {
 
 function goToImageStep() {
   imageStep.hidden = false;
-  document.querySelector("main").classList.add("wide");
+  mainEl.classList.add("wide");
   imageStep.scrollIntoView({ behavior: "smooth", block: "nearest" });
   if (imageGrid.children.length === 0) {
     generateImages();

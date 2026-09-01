@@ -75,8 +75,10 @@
 
       <section id="result" hidden>
         <h2>Script vocal généré</h2>
-        <pre id="script-output"></pre>
+        <textarea id="script-output" spellcheck="true" placeholder="(aucun script vocal extrait)"></textarea>
+        <p id="script-hint" class="hint"></p>
         <p id="duration-estimate"></p>
+        <button type="button" id="edit-script-btn" class="icon-btn" hidden></button>
         <button type="button" id="generate-audio-btn" class="icon-btn"></button>
         <div id="audio-wrapper" hidden>
           <span class="audio-label">Narration</span>

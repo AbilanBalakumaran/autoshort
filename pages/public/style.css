@@ -1060,13 +1060,43 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+/* Editable until the narration exists: the AI regularly misspells proper
+   nouns, and the voice-over has to read the corrected text. */
 #script-output {
-  white-space: pre-wrap;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: hidden;
   overflow-wrap: anywhere;
-  word-break: break-word;
   margin: 0;
-  max-width: 100%;
+  background: #101010;
   font-family: inherit;
+  line-height: 1.5;
+  resize: none;
+}
+
+#script-output:focus {
+  outline: none;
+  border-color: rgba(230, 57, 70, 0.7);
+}
+
+/* Locked once the audio is generated — the narration would no longer match
+   an edited script. #edit-script-btn is the way back out. */
+#script-output.locked {
+  border-color: #262626;
+  color: #b9b9c0;
+  cursor: default;
+}
+
+#script-hint {
+  margin: 8px 0 0;
+}
+
+#edit-script-btn {
+  width: 100%;
+  margin-top: 12px;
+  background: #333;
 }
 
 .upload-tile {
