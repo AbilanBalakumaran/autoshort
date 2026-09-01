@@ -7,28 +7,24 @@ montage → publication).
 
 ```
 pages/
-  public/          front-end (source de vérité) — déployé sur Cloudflare Pages
+  public/          front-end (source unique)
   functions/       API Cloudflare Pages Functions (generate-prompt, generate-audio, …)
   wrangler.toml
 worker/            worker Cloudflare (cron actus)
 push-worker/       worker Cloudflare (notifications push)
-index.html         ┐
-script.js          │ copie miroir de pages/public, servie par GitHub Pages
-style.css          │ (https://abilanbalakumaran.github.io/autoshort/)
-sw.js              │
-manifest.json …    ┘
+.github/workflows/pages.yml   publie pages/public sur GitHub Pages
 ```
 
-> ⚠️ Les fichiers à la racine sont un **miroir** de `pages/public/` : les deux
-> emplacements sont déployés (Cloudflare Pages sert aussi l'API, GitHub Pages
-> ne sert que le front). Ne modifie que `pages/public/`, puis lance :
->
-> ```sh
-> ./sync-public.sh
-> ```
->
-> pour recopier le front à la racine. `./sync-public.sh --check` échoue si les
-> deux copies ont divergé.
+Le front est déployé deux fois, à partir du **même** dossier `pages/public` :
+
+| URL | Sert | Déploiement |
+| --- | --- | --- |
+| `autoshort-2ym.pages.dev` | front + API (`pages/functions`) | Cloudflare Pages |
+| `abilanbalakumaran.github.io/autoshort` | front seul | GitHub Actions (`pages.yml`) |
+
+> ℹ️ Pour que le workflow prenne le relais, régler une fois **Settings → Pages
+> → Source** sur « GitHub Actions » (avant, GitHub Pages servait une copie
+> miroir du front à la racine du dépôt ; elle a été supprimée).
 
 ## Dev local
 
@@ -37,5 +33,6 @@ npx serve -l 5500 pages/public
 ```
 
 À chaque déploiement qui touche `index.html`, `style.css`, `script.js` ou
-`vendor/`, incrémente `CACHE_NAME` dans `sw.js` (voir le commentaire en tête du
-fichier) pour que le service worker recharge les clients.
+`vendor/`, incrémente `CACHE_NAME` dans `pages/public/sw.js` (voir le
+commentaire en tête du fichier) pour que le service worker recharge les
+clients ouverts.
