@@ -2620,10 +2620,24 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
 
   // Scaled from the 540px reference the styling was authored against, so
   // the subtitles keep their proportions now that the canvas is 1080 wide.
-  const fontSize = 45 * (canvasW / THUMBNAIL_REFERENCE_WIDTH);
-  ctx.font = `700 ${fontSize}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
+  let fontSize = 45 * (canvasW / THUMBNAIL_REFERENCE_WIDTH);
+  ctx.font = subtitleFont(fontSize);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+
+  // A long word used to run off both edges of the frame. It is shrunk to fit
+  // instead — measured against the bounce's PEAK size, not its resting one,
+  // because the pop-in overshoots ~20% past where the word settles: a word
+  // that merely fitted at rest still spilled over for the few frames of the
+  // animation, which is exactly when the eye is on it.
+  const maxWidth = (canvasW * SUBTITLE_MAX_WIDTH_RATIO) / SUBTITLE_BOUNCE_PEAK;
+  const drawnWidth = ctx.measureText(word).width + fontSize * SUBTITLE_STROKE_RATIO;
+  if (drawnWidth > maxWidth) {
+    // Both the glyphs and the outline scale with the font size, so this single
+    // ratio lands the whole thing exactly on the limit.
+    fontSize *= maxWidth / drawnWidth;
+    ctx.font = subtitleFont(fontSize);
+  }
 
   const x = canvasW / 2;
   const y = canvasH * 0.72;
@@ -2640,7 +2654,7 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
   // Matches the thumbnail's treatment: black rim, red mid outline, white fill.
-  ctx.lineWidth = fontSize * 0.22;
+  ctx.lineWidth = fontSize * SUBTITLE_STROKE_RATIO;
   ctx.strokeStyle = "#000000";
   ctx.strokeText(word, 0, 0);
 
@@ -2653,6 +2667,18 @@ function drawSubtitle(ctx, words, canvasW, canvasH, elapsedMs, totalMs, timingsM
   ctx.fillText(word, 0, 0);
 
   ctx.restore();
+}
+
+// Widest a subtitle may get, as a share of the frame.
+const SUBTITLE_MAX_WIDTH_RATIO = 0.9;
+// bounceEaseOut is a back-out curve: it swells to 1.195 before settling on 1.
+const SUBTITLE_BOUNCE_PEAK = 1.2;
+// The black rim is drawn centred on the glyph edge, so it widens the word by
+// its full line width.
+const SUBTITLE_STROKE_RATIO = 0.22;
+
+function subtitleFont(size) {
+  return `700 ${size}px "Obelix Pro", "Arial Black", system-ui, sans-serif`;
 }
 
 function bounceEaseOut(t) {
