@@ -13,15 +13,6 @@ const ANIME_CORNER_RSS_URL = "https://animecorner.me/feed/";
 const OTAKU_USA_RSS_URL = "https://www.otakuusamagazine.com/feed";
 const ANIME_HUNCH_RSS_URL = "https://animehunch.com/feed/";
 const SILICONERA_RSS_URL = "https://www.siliconera.com/feed/";
-// Toy People (and its Denden sub-brand) publishes no feed and answers every
-// article path with a Cloudflare bot challenge — 403 "Just a moment…", the
-// same wall a Pages Function's fetch() would hit — so its YouTube channel is
-// the only machine-readable window onto the outlet. Note that it is a
-// Traditional Chinese toy/gashapon channel rather than an anime news desk:
-// it contributes few usable stories, hence the small cap below.
-const TOY_PEOPLE_YT_URL =
-  "https://www.youtube.com/feeds/videos.xml?channel_id=UCA8bOZ87Klj_jGcue29Vitw";
-const TOY_PEOPLE_MAX_ITEMS = 6;
 const MAX_ITEMS = 50;
 
 // ANN's "all" feed mixes in games/reviews/conventions — filter by keyword
@@ -135,7 +126,6 @@ export async function onRequestGet() {
       fetchOtakuUsaNews(),
       fetchAnimeHunchNews(),
       fetchSiliconeraNews(),
-      fetchToyPeopleNews(),
     ]);
 
     // Sorted by popularity first so that when the list is capped at
@@ -167,7 +157,7 @@ async function fetchFeedXml(url) {
   const res = await fetch(url, { headers: { "User-Agent": BROWSER_UA } });
   if (!res.ok) return null;
   const xml = await res.text();
-  return /<(?:item|entry)[\s>]/i.test(xml) ? xml : null;
+  return /<item[\s>]/i.test(xml) ? xml : null;
 }
 
 async function fetchMalNews() {
@@ -265,7 +255,7 @@ async function fetchOtakuUsaNews() {
   }
 }
 
-// The three sources below each cost a single subrequest: their feeds already
+// The two sources below each cost a single subrequest: their feeds already
 // carry a usable description, and roughly half the items embed their lead
 // image, so unlike the ANN and Anime Corner branches they never scrape the
 // article page. That keeps this endpoint well inside the per-invocation
@@ -309,28 +299,6 @@ async function fetchSiliconeraNews() {
       image: item.contentImage,
       source: "Siliconera",
     }));
-  } catch {
-    return [];
-  }
-}
-
-async function fetchToyPeopleNews() {
-  try {
-    const xml = await fetchFeedXml(TOY_PEOPLE_YT_URL);
-    if (!xml) return [];
-    // A YouTube feed is Atom, not RSS: <entry> instead of <item>, and the
-    // text lives in <media:description>. Everything needed is in the feed,
-    // including a 480x360 thumbnail.
-    return parseAtomEntries(xml)
-      .slice(0, TOY_PEOPLE_MAX_ITEMS)
-      .map((entry) => ({
-        title: entry.title,
-        link: entry.link,
-        description: entry.description,
-        pubDate: entry.published,
-        image: entry.thumbnail,
-        source: "Toy People",
-      }));
   } catch {
     return [];
   }
@@ -413,29 +381,6 @@ function parseRssItems(xml) {
   }
 
   return items;
-}
-
-function parseAtomEntries(xml) {
-  const entries = [];
-
-  for (const block of xml.match(/<entry>[\s\S]*?<\/entry>/g) || []) {
-    const title = extractTag(block, "title");
-    // Atom puts the URL in an attribute rather than in the element body.
-    const linkMatch = block.match(/<link[^>]+rel=["\']alternate["\'][^>]+href=["\']([^"\']+)["\']/);
-    const thumbnailMatch = block.match(/<media:thumbnail[^>]+url=["\']([^"\']+)["\']/);
-
-    if (title && linkMatch) {
-      entries.push({
-        title,
-        link: linkMatch[1],
-        description: extractTag(block, "media:description"),
-        published: extractTag(block, "published"),
-        thumbnail: thumbnailMatch ? thumbnailMatch[1] : null,
-      });
-    }
-  }
-
-  return entries;
 }
 
 function extractTag(block, tag) {
