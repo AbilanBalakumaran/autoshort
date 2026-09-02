@@ -2,6 +2,9 @@ import { json, corsHeaders } from "./_utils.js";
 
 const MAX_IMAGES = 30;
 const MIN_IMAGES = 8;
+// Long enough for a headline, short enough that a pasted article body can't
+// turn into a search query.
+const MAX_TOPIC_CHARS = 140;
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
@@ -13,7 +16,7 @@ export async function onRequestOptions() {
 let sourceErrors = {};
 
 export async function onRequestPost({ request, env }) {
-  const { prompt, showName, debug, page: rawPage } = await request.json();
+  const { prompt, showName, topic, debug, page: rawPage } = await request.json();
   const page = Math.max(1, Math.min(10, Number(rawPage) || 1));
   sourceErrors = {};
 
@@ -23,6 +26,21 @@ export async function onRequestPost({ request, env }) {
 
   const show = showName && showName.toLowerCase() !== "anime" ? showName.trim() : "";
   const query = show || prompt;
+
+  // The catalogue APIs below (MAL, AniList, Kitsu, TMDB) can only match a
+  // franchise entry, so they keep the show name. Free-text web search can
+  // answer the actual story — "Pokémon Legends Z-A trailer" rather than
+  // "Pokémon" — so it gets the news headline instead. Sending the headline to
+  // everything would return nothing from the catalogues; sending the show name
+  // to everything is what made a trailer story come back as generic franchise
+  // posters. The show name is prepended when the headline omits it, so a
+  // "Nouveau trailer dévoilé" still lands on the right series.
+  const headline = typeof topic === "string" ? topic.trim().slice(0, MAX_TOPIC_CHARS) : "";
+  const webQuery = !headline
+    ? query
+    : show && !headline.toLowerCase().includes(show.toLowerCase())
+      ? `${show} ${headline}`
+      : headline;
 
   // Query all three independent anime databases in parallel and merge —
   // the goal is a rich pool of on-topic images so the user never has to
@@ -42,9 +60,9 @@ export async function onRequestPost({ request, env }) {
       fetchAniListImages(query),
       fetchKitsuImages(query, page),
       fetchMalMangaImages(query, page),
-      fetchGoogleImages(query, page, env),
+      fetchGoogleImages(webQuery, page, env, Boolean(headline)),
       fetchTmdbImages(query, page, env),
-      fetchTavilyImages(query, page, env),
+      fetchTavilyImages(webQuery, page, env, Boolean(headline)),
     ]);
 
   // Title-bearing promotional art leads the grid.
@@ -87,6 +105,7 @@ export async function onRequestPost({ request, env }) {
         kitsu: kitsuImages.length,
         malManga: malMangaImages.length,
       },
+      queries: { catalogues: query, web: webQuery },
       configured: {
         tavily: Boolean(env?.TAVILY_API_KEY),
         tmdb: Boolean(env?.TMDB_API_KEY),
@@ -279,12 +298,23 @@ const TAVILY_ANGLES = [
   "anime characters art",
 ];
 
-async function fetchTavilyImages(query, page, env) {
+// When the query already names the event, steering it back towards "official
+// poster art" fights it — these angles keep it on the news itself.
+const TAVILY_TOPIC_ANGLES = [
+  "anime news",
+  "anime screenshot",
+  "anime key visual",
+  "anime trailer",
+  "anime official art",
+];
+
+async function fetchTavilyImages(query, page, env, isTopic = false) {
   const key = env?.TAVILY_API_KEY;
   if (!key || !query) return [];
 
   try {
-    const angle = TAVILY_ANGLES[(page - 1) % TAVILY_ANGLES.length];
+    const angles = isTopic ? TAVILY_TOPIC_ANGLES : TAVILY_ANGLES;
+    const angle = angles[(page - 1) % angles.length];
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: {
@@ -374,15 +404,16 @@ async function fetchTmdbImages(query, page, env) {
 // as Cloudflare secrets; without them this source is simply skipped.
 // NOTE: Google closed this API to new customers in 2025 and shuts it down
 // entirely on 2027-01-01, so it only helps accounts that already had a key.
-async function fetchGoogleImages(query, page, env) {
+async function fetchGoogleImages(query, page, env, isTopic = false) {
   const key = env?.GOOGLE_CSE_KEY;
   const cx = env?.GOOGLE_CSE_CX;
   if (!key || !cx || !query) return [];
 
   try {
-    // Biasing the query towards official art gives far better results than
-    // the bare title, which pulls in merchandise and fan edits.
-    const q = `${query} anime key visual poster`;
+    // A bare title pulls in merchandise and fan edits, so it gets biased
+    // towards official art; a headline is already specific and only needs
+    // steering back to anime.
+    const q = isTopic ? `${query} anime` : `${query} anime key visual poster`;
     const start = (page - 1) * 10 + 1;
     if (start > 91) return []; // Google refuses start > 91
 

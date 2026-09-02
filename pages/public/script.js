@@ -159,6 +159,10 @@ let selectedVoiceId = "";
 let currentVoiceScript = "";
 let currentVisualStyle = "";
 let currentShowName = "";
+// The headline of the news being covered. The image search needs it because
+// the franchise name alone answers "Pokémon" when the story is "the new
+// Pokémon trailer" — same series, wrong pictures.
+let currentTopic = "";
 let currentCharacters = [];
 let currentRealEntities = [];
 // Set right before a suggestion-triggered generation so generateImages()
@@ -703,6 +707,15 @@ resetTemplateBtn.addEventListener("click", () => {
 // The generated script is editable so typos in proper nouns (show titles,
 // character names) can be fixed before the voice-over reads them out loud.
 
+// The Suggestions tab fills the prompt box with "title\n\ndescription", and a
+// pasted article almost always leads with its headline, so the first non-empty
+// line is the news topic either way. Capped so a single-paragraph paste can't
+// turn a whole article into a search query.
+function newsHeadline(text) {
+  const firstLine = (text || "").split("\n").map((line) => line.trim()).find(Boolean) || "";
+  return firstLine.slice(0, 140);
+}
+
 function autoGrowScript() {
   scriptOutput.style.height = "auto";
   scriptOutput.style.height = `${Math.max(scriptOutput.scrollHeight, 80)}px`;
@@ -793,6 +806,7 @@ clearBtn.addEventListener("click", () => {
   setVoiceScript("");
   currentVisualStyle = "";
   currentShowName = "";
+  currentTopic = "";
   currentCharacters = [];
   currentRealEntities = [];
   resetAudioAndBeyond();
@@ -829,6 +843,7 @@ form.addEventListener("submit", async (e) => {
 
     currentVisualStyle = data.visualStyle || "";
     currentShowName = data.showName || "";
+    currentTopic = newsHeadline(prompt);
     currentCharacters = data.characters || [];
     currentRealEntities = data.realEntities || [];
     // Unhidden first: a hidden textarea has no scrollHeight, so autoGrowScript()
@@ -1262,6 +1277,7 @@ async function fetchImageBatch(stylePrompt, searchQuery, page) {
       body: JSON.stringify({
         prompt: stylePrompt,
         showName: currentShowName,
+        topic: currentTopic,
         page,
       }),
     });
