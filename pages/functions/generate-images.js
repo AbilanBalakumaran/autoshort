@@ -6,6 +6,22 @@ const MIN_IMAGES = 8;
 // turn into a search query.
 const MAX_TOPIC_CHARS = 140;
 
+// Free-text web search returns page URLs alongside real images — Instagram's
+// SEO shim (lookaside.instagram.com/seo/google_widget/crawler/?media_id=…)
+// answers 200 with half a megabyte of HTML, and three of five results for a
+// news headline were that. An extension in the path is what separates a file
+// from an endpoint. Applied only to the web sources: the catalogue CDNs are
+// known-good and some of their URLs legitimately carry none.
+const IMAGE_FILE_URL = /\.(?:jpe?g|png|webp|gif|avif)(?:$|[?#])/i;
+
+function looksLikeImageFile(url) {
+  try {
+    return IMAGE_FILE_URL.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
 }
@@ -342,7 +358,7 @@ async function fetchTavilyImages(query, page, env, isTopic = false) {
     // depending on the options used — handle both.
     return (data.images || [])
       .map((img) => (typeof img === "string" ? img : img?.url))
-      .filter((u) => typeof u === "string" && /^https:\/\//.test(u));
+      .filter((u) => typeof u === "string" && /^https:\/\//.test(u) && looksLikeImageFile(u));
   } catch (err) {
     sourceErrors.tavily = err.message || String(err);
     return [];
