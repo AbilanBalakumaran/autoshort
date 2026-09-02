@@ -2,7 +2,7 @@
 // byte-different sw.js is what makes the browser install the new worker,
 // which (via skipWaiting + controllerchange in script.js) reloads open
 // clients onto the fresh files immediately instead of one launch later.
-const CACHE_NAME = "autoshort-v29";
+const CACHE_NAME = "autoshort-v30";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -12,7 +12,7 @@ const APP_SHELL = [
   "./icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./fonts/ObelixProB-cyr.ttf",
+  "./fonts/ObelixProB-cyr-fr.ttf",
 ];
 
 self.addEventListener("install", (event) => {

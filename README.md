@@ -37,6 +37,20 @@ Le front est déployé deux fois, à partir du **même** dossier `pages/public` 
 > → Source** sur « GitHub Actions » (avant, GitHub Pages servait une copie
 > miroir du front à la racine du dépôt ; elle a été supprimée).
 
+## Police des sous-titres
+
+`pages/public/fonts/ObelixProB-cyr-fr.ttf` est ObelixPro (© vallex, 2011,
+`fsType = 8` — modification autorisée) complétée : la version d'origine ne
+contenait aucune lettre accentuée, si bien que chaque é/è/à/ç d'un sous-titre
+retombait sur Arial Black. `tools/extend-font.py` fabrique les glyphes
+manquants à partir des formes que la police contient déjà (les traits du
+double accent aigu, le caron de Š retourné en circonflexe, les points du Ÿ,
+la cédille du Ş), puis les recombine avec les lettres de base :
+
+```sh
+python3 tools/extend-font.py <source.ttf> pages/public/fonts/ObelixProB-cyr-fr.ttf
+```
+
 ## Dev local
 
 ```sh
