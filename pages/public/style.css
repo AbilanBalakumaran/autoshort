@@ -708,12 +708,24 @@ label {
   cursor: grabbing;
 }
 
+/* The thumbnail previews what the montage will actually do. It used to be
+   cover unconditionally, which showed a 9:16 crop of an image the video then
+   letterboxed — the preview promised a framing the result never delivered. */
 .timeline-thumb {
   width: 56px;
   height: 100px;
-  object-fit: cover;
+  object-fit: contain;
+  background: #0b0b0b;
   border-radius: 6px;
   flex: none;
+}
+
+.timeline-row.is-cropped .timeline-thumb {
+  object-fit: cover;
+}
+
+.timeline-crop-btn.active {
+  background: linear-gradient(135deg, #16a34a, #15803d);
 }
 
 .timeline-info {

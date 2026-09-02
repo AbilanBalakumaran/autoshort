@@ -37,6 +37,8 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   download:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
+  crop:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>',
   pencil:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
@@ -187,6 +189,10 @@ const MAX_ADD_FIRST = 40;
 const MAX_ADD_REGEN = 30;
 let currentWordTimings = null; // real per-word start times (seconds) from ElevenLabs, when available
 let selectedImages = []; // ordered array of image URLs, order = order in the video
+// Images the user asked to fill the 9:16 frame instead of being letterboxed
+// over a blurred copy of themselves — i.e. the crop the grid thumbnail already
+// shows. Keyed by URL, so it survives a reorder of the timeline.
+let croppedImages = new Set();
 let defaultTemplate = "";
 
 initButtons();
@@ -768,6 +774,7 @@ function resetAudioAndBeyond() {
   imagePool = [];
   imageReserve = [];
   imageSearchPage = 1;
+  croppedImages = new Set();
   timelineStep.hidden = true;
   timelineList.innerHTML = "";
   montageBtn.hidden = true;
@@ -1619,6 +1626,25 @@ function renderTimeline() {
     replaceBtn.title = "Remplacer l'image";
     replaceBtn.addEventListener("click", () => replaceImage(index));
 
+    const cropBtn = document.createElement("button");
+    cropBtn.type = "button";
+    cropBtn.className = "timeline-action-btn timeline-crop-btn";
+    cropBtn.innerHTML = ICONS.crop;
+    const syncCropBtn = () => {
+      const cropped = croppedImages.has(src);
+      cropBtn.classList.toggle("active", cropped);
+      cropBtn.title = cropped
+        ? "Recadrée en vertical — cliquer pour revoir l'image entière"
+        : "Recadrer en vertical (plein cadre, comme la vignette)";
+      row.classList.toggle("is-cropped", cropped);
+    };
+    syncCropBtn();
+    cropBtn.addEventListener("click", () => {
+      if (croppedImages.has(src)) croppedImages.delete(src);
+      else croppedImages.add(src);
+      syncCropBtn();
+    });
+
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "timeline-action-btn";
@@ -1631,7 +1657,7 @@ function renderTimeline() {
       updateConfirmLabel();
     });
 
-    controls.append(replaceBtn, removeBtn);
+    controls.append(cropBtn, replaceBtn, removeBtn);
     row.append(handle, thumb, info, controls);
     timelineList.appendChild(row);
   });
@@ -1815,7 +1841,16 @@ async function generateMontage() {
     // now — skip the broken ones and build the montage with the rest
     // instead of failing the whole generation over one dead URL.
     const settled = await Promise.allSettled(imageUrls.map(loadImage));
-    const images = settled.filter((s) => s.status === "fulfilled").map((s) => s.value);
+    const images = settled
+      .map((outcome, i) => {
+        if (outcome.status !== "fulfilled") return null;
+        // Carried on the element itself rather than threaded through
+        // renderMontage → drawMontageFrameAt → drawKenBurnsFrame, which both
+        // renderers would have to pass along.
+        outcome.value.cropToFill = croppedImages.has(imageUrls[i]);
+        return outcome.value;
+      })
+      .filter(Boolean);
     const failed = settled.length - images.length;
     if (failed > 0) log(`${failed} image(s) ignorée(s) (lien mort ou bloqué)`);
     if (images.length === 0) {
@@ -2429,6 +2464,13 @@ function drawKenBurnsFrame(ctx, img, canvasW, canvasH, progress, zoomIn, bgCache
   // The blur itself is expensive, so it's pre-rendered once per image and
   // cached instead of re-applying the filter on every animation frame
   // (which was causing real-time recording to stutter/freeze).
+  // Asked to fill the frame: the image is cropped to 9:16 exactly as the grid
+  // thumbnail previews it, and there is nothing left for a background to fill.
+  if (img.cropToFill) {
+    drawScaledImage(ctx, img, canvasW, canvasH, zoomScale, "cover");
+    return;
+  }
+
   const blurredBg = getBlurredBackground(img, canvasW, canvasH, bgCache);
   const bw = canvasW * zoomScale;
   const bh = canvasH * zoomScale;

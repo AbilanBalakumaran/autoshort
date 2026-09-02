@@ -63,6 +63,50 @@ export async function onRequestPost({ request, env }) {
   return json({
     titles,
     description: descriptionMatch ? descriptionMatch[1].trim() : "",
-    tags: tagsMatch ? tagsMatch[1].trim() : "",
+    tags: cleanTags(tagsMatch ? tagsMatch[1] : ""),
   });
+}
+
+// YouTube allows 500 characters of tags in total and 100 per tag, and counts
+// the separators. Past the limit it drops the overflow silently.
+const YOUTUBE_TAGS_MAX_CHARS = 500;
+const YOUTUBE_TAG_MAX_CHARS = 100;
+
+// The TAGS capture above runs to the end of the model's message, so anything
+// it adds after the list — a closing remark, a repeated heading — used to land
+// in the field and be pasted into YouTube as tags. Only the first block is
+// kept, and each entry is normalised to what the tag field accepts: no
+// hashtag, no quotes, no list bullet, no duplicate, nothing over the limits.
+function cleanTags(raw) {
+  const firstBlock = String(raw || "").split(/\n\s*\n/)[0];
+  const seen = new Set();
+  const tags = [];
+  let total = 0;
+
+  for (const piece of firstBlock.split(/[,\n]/)) {
+    const tag = piece
+      // Trimmed first: the separators leave a leading space, which would stop
+      // the anchored patterns below from matching at all.
+      .trim()
+      .replace(/^(?:\d+[.)]|[-*\u2022])\s+/, "")
+      .replace(/^#+/, "")
+      .replace(/["\u201c\u201d\u2018\u2019']/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!tag || tag.length > YOUTUBE_TAG_MAX_CHARS) continue;
+
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+
+    // ", " between entries counts towards YouTube's budget too.
+    const cost = tag.length + (tags.length ? 2 : 0);
+    if (total + cost > YOUTUBE_TAGS_MAX_CHARS) break;
+
+    seen.add(key);
+    tags.push(tag);
+    total += cost;
+  }
+
+  return tags.join(", ");
 }
