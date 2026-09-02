@@ -19,8 +19,19 @@ Le front est déployé deux fois, à partir du **même** dossier `pages/public` 
 
 | URL | Sert | Déploiement |
 | --- | --- | --- |
-| `autoshort-2ym.pages.dev` | front + API (`pages/functions`) | Cloudflare Pages |
+| `autoshort-2ym.pages.dev` | front + API (`pages/functions`) | GitHub Actions (`cloudflare.yml`) |
 | `abilanbalakumaran.github.io/autoshort` | front seul | GitHub Actions (`pages.yml`) |
+
+> ℹ️ Le projet Cloudflare Pages n'est pas relié au dépôt : un push sur `main`
+> ne déclenche rien de son côté. `cloudflare.yml` s'en charge via
+> `wrangler pages deploy`, et a besoin d'un secret de dépôt
+> `CLOUDFLARE_API_TOKEN` (permission « Account · Cloudflare Pages · Edit »).
+> Sans ce secret le job réussit sans rien déployer, et la mise en ligne doit
+> alors se faire à la main :
+>
+> ```sh
+> cd pages && npx wrangler pages deploy public --project-name=autoshort
+> ```
 
 > ℹ️ Pour que le workflow prenne le relais, régler une fois **Settings → Pages
 > → Source** sur « GitHub Actions » (avant, GitHub Pages servait une copie

@@ -1,0 +1,56 @@
+# Cloudflare Pages sert le front ET l'API (pages/functions), mais son projet
+# n'est pas relié au dépôt : un push sur main ne déclenchait rien de son côté,
+# et chaque mise en ligne devait passer par un `wrangler pages deploy` manuel.
+# Ce workflow s'en charge.
+#
+# Prérequis : un secret de dépôt CLOUDFLARE_API_TOKEN (Settings → Secrets and
+# variables → Actions), avec la permission « Account · Cloudflare Pages · Edit ».
+# Tant qu'il n'existe pas, le job se termine en succès sans rien déployer.
+# CLOUDFLARE_ACCOUNT_ID n'est nécessaire que si le token voit plusieurs comptes.
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pages/**"
+      - ".github/workflows/cloudflare.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Le contexte `secrets` n'est pas lisible dans un `if:` de job, d'où ce
+      # garde-fou en première étape plutôt qu'une condition sur le job.
+      - name: Vérifier que le token est configuré
+        id: guard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Secret CLOUDFLARE_API_TOKEN absent — déploiement ignoré." >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.guard.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      # Déploie pages/public et embarque pages/functions au passage, ce qui
+      # met en ligne le front et l'API du même coup.
+      - if: steps.guard.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: pages
+          command: pages deploy public --project-name=autoshort
