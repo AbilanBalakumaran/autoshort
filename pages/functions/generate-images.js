@@ -342,7 +342,10 @@ async function fetchTavilyImages(query, page, env, isTopic = false) {
         include_images: true,
         include_answer: false,
         search_depth: "basic",
-        max_results: 8,
+        // Images are harvested from the pages this returns, and the
+        // non-image results are now filtered out, so a wider net is what
+        // keeps enough on-topic pictures to fill the top of the grid.
+        max_results: 15,
       }),
     });
 
