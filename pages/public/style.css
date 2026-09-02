@@ -580,6 +580,80 @@ label {
   display: flex;
 }
 
+/* The tiles are 9:16 with object-fit: cover, so a landscape image is cropped
+   to look exactly like a portrait one. This states the real shape, because a
+   vertical image fills the video frame and a horizontal one gets letterboxed
+   over a blurred copy of itself. */
+.image-format {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.image-format:empty {
+  display: none;
+}
+
+.image-format.is-vertical {
+  border: 1px solid rgba(74, 222, 128, 0.85);
+  color: #86efac;
+}
+
+.image-format.is-horizontal {
+  border: 1px solid rgba(251, 191, 36, 0.85);
+  color: #fcd34d;
+}
+
+.image-format.is-square {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #d4d4d8;
+}
+
+/* Same signal in the review step, where a landscape image means the montage
+   will letterbox it. */
+/* Selector carries the parent because `.timeline-info span` sets display:
+   block, which would stretch the badge across the whole row. */
+.timeline-info .timeline-format {
+  display: inline-block;
+  width: fit-content;
+  margin: 2px 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  vertical-align: 1px;
+}
+
+.timeline-info .timeline-format:empty {
+  display: none;
+}
+
+.timeline-info .timeline-format.is-vertical {
+  border: 1px solid rgba(74, 222, 128, 0.7);
+  color: #86efac;
+}
+
+.timeline-info .timeline-format.is-horizontal {
+  border: 1px solid rgba(251, 191, 36, 0.7);
+  color: #fcd34d;
+}
+
+.timeline-info .timeline-format.is-square {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #d4d4d8;
+}
+
 #timeline-step {
   margin-top: 24px;
 }

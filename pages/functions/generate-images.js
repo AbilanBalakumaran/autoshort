@@ -70,7 +70,7 @@ export async function onRequestPost({ request, env }) {
   // finds exactly what the user would find by googling the show's name —
   // key visuals and news art carrying the title — which the structured
   // databases don't always have. Skipped silently when not set up.
-  const [malImages, aniListImages, kitsuImages, malMangaImages, googleImages, tmdbImages, tavilyImages] =
+  const [malImages, aniListImages, kitsuImages, malMangaImages, googleImages, tmdbImages, tavilyImages, wallpaperImages] =
     await Promise.all([
       fetchRealShowImages(query, page),
       fetchAniListImages(query),
@@ -78,12 +78,14 @@ export async function onRequestPost({ request, env }) {
       fetchMalMangaImages(query, page),
       fetchGoogleImages(webQuery, page, env, Boolean(headline)),
       fetchTmdbImages(query, page, env),
-      fetchTavilyImages(webQuery, page, env, Boolean(headline)),
+      fetchTavilyImages(webQuery, page, env, headline ? TAVILY_TOPIC_ANGLES : TAVILY_ANGLES),
+      fetchTavilyImages(query, page, env, TAVILY_WALLPAPER_ANGLES),
     ]);
 
   // Title-bearing promotional art leads the grid.
   let images = interleave([
     tavilyImages,
+    wallpaperImages,
     googleImages,
     tmdbImages,
     malImages,
@@ -114,6 +116,7 @@ export async function onRequestPost({ request, env }) {
     payload.debug = {
       counts: {
         tavily: tavilyImages.length,
+        tavilyWallpaper: wallpaperImages.length,
         tmdb: tmdbImages.length,
         google: googleImages.length,
         mal: malImages.length,
@@ -324,12 +327,21 @@ const TAVILY_TOPIC_ANGLES = [
   "anime official art",
 ];
 
-async function fetchTavilyImages(query, page, env, isTopic = false) {
+// The montage is 9:16: a portrait image fills the frame, a landscape one gets
+// letterboxed over a blurred copy of itself. So a second pass hunts explicitly
+// for vertical wallpapers of the series — the general-artwork fallback when the
+// news itself has no tall image to offer.
+const TAVILY_WALLPAPER_ANGLES = [
+  "phone wallpaper portrait vertical",
+  "mobile wallpaper 9:16",
+  "vertical wallpaper 4k",
+];
+
+async function fetchTavilyImages(query, page, env, angles) {
   const key = env?.TAVILY_API_KEY;
   if (!key || !query) return [];
 
   try {
-    const angles = isTopic ? TAVILY_TOPIC_ANGLES : TAVILY_ANGLES;
     const angle = angles[(page - 1) % angles.length];
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",

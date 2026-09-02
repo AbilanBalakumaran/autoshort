@@ -1210,6 +1210,9 @@ async function generateImages() {
     // have to click each one manually.
     if (selectedImages.length === 0) {
       selectedImages.push(...imagePool.slice(0, 5));
+      // Provisional: applyOrientationOrder() revises it once the images have
+      // loaded and their shape is actually known.
+      selectionIsAutomatic = true;
     }
 
     imageGrid.innerHTML = "";
@@ -1225,7 +1228,7 @@ async function generateImages() {
     const older = [];
     imagePool.forEach((src) => {
       if (selectedImages.includes(src)) return;
-      if (addedThisRound.has(src)) addImageCard(src, true);
+      if (isRegen && addedThisRound.has(src)) addImageCard(src, true);
       else older.push(src);
     });
     older.forEach((src) => addImageCard(src));
@@ -1420,6 +1423,67 @@ function addUploadTile() {
   imageGrid.appendChild(tile);
 }
 
+// The montage is 9:16: a portrait image fills the frame, a landscape one is
+// letterboxed over a blurred copy of itself. The grid can't show that on its
+// own — its tiles are 9:16 with object-fit: cover, so a landscape image is
+// cropped to look exactly like a portrait one — hence an explicit label.
+const ORIENTATION_LABEL = { vertical: "VERTICAL", square: "CARRÉ", horizontal: "HORIZONTAL" };
+const ORIENTATION_RANK = { vertical: 0, square: 1, horizontal: 2 };
+
+function orientationOf(img) {
+  const ratio = img.naturalWidth / img.naturalHeight;
+  if (!Number.isFinite(ratio) || ratio <= 0) return null;
+  if (ratio <= 0.9) return "vertical";
+  if (ratio >= 1.1) return "horizontal";
+  return "square";
+}
+
+// True while the five pre-selected images are still the ones the app chose.
+// Once the user picks for themselves, their selection is never reshuffled
+// under them.
+let selectionIsAutomatic = true;
+let orientationSortTimer = null;
+
+function scheduleOrientationSort() {
+  clearTimeout(orientationSortTimer);
+  orientationSortTimer = setTimeout(applyOrientationOrder, 250);
+}
+
+// Vertical first — that is the shape that fills the frame — and within each
+// orientation the freshly found images stay ahead, so a "Régénérer" still
+// visibly surfaces what it just added. The other way round would do nothing on
+// a first batch, where every unselected card is marked new.
+function applyOrientationOrder() {
+  const cards = [...imageGrid.querySelectorAll(".image-card")].filter((card) => card.dataset.src);
+  if (cards.length < 2) return;
+
+  const movable = selectionIsAutomatic
+    ? cards
+    : cards.filter((card) => !selectedImages.includes(card.dataset.src));
+  if (movable.length < 2) return;
+
+  const rank = (card) =>
+    (ORIENTATION_RANK[card.dataset.orientation] ?? 1) * 10 +
+    (card.classList.contains("image-card-new") ? 0 : 1);
+
+  const sorted = [...movable].sort((a, b) => rank(a) - rank(b));
+  if (sorted.every((card, i) => card === movable[i])) return;
+  sorted.forEach((card) => imageGrid.appendChild(card));
+
+  // The automatic pick was made before any image had loaded, so it couldn't
+  // know their shape. Now that it can, hand the user five vertical ones.
+  if (selectionIsAutomatic) {
+    const ordered = [...imageGrid.querySelectorAll(".image-card")]
+      .map((card) => card.dataset.src)
+      .filter(Boolean);
+    selectedImages.length = 0;
+    selectedImages.push(...ordered.slice(0, 5));
+    syncGridSelection();
+    updateConfirmLabel();
+    if (!timelineStep.hidden) renderTimeline();
+  }
+}
+
 function addImageCard(src, isNew = false) {
   const card = document.createElement("div");
   card.className =
@@ -1455,10 +1519,24 @@ function addImageCard(src, isNew = false) {
   const badge = document.createElement("span");
   badge.className = "image-check";
 
+  const format = document.createElement("span");
+  format.className = "image-format";
+
+  img.addEventListener("load", () => {
+    const orientation = orientationOf(img);
+    if (!orientation) return;
+    card.dataset.orientation = orientation;
+    format.textContent = ORIENTATION_LABEL[orientation];
+    format.classList.add(`is-${orientation}`);
+    scheduleOrientationSort();
+  });
+
   card.appendChild(img);
   card.appendChild(badge);
+  card.appendChild(format);
 
   card.addEventListener("click", () => {
+    selectionIsAutomatic = false;
     const i = selectedImages.indexOf(src);
     if (i !== -1) selectedImages.splice(i, 1);
     else selectedImages.push(src);
@@ -1507,6 +1585,12 @@ function renderTimeline() {
     const thumb = document.createElement("img");
     thumb.src = src;
     thumb.className = "timeline-thumb";
+    // Same signal as in the grid: this is where the user reviews the sequence
+    // they are about to render, and a landscape image in it means letterboxing.
+    thumb.addEventListener("load", () => {
+      const orientation = orientationOf(thumb);
+      if (orientation) row.dataset.orientation = orientation;
+    });
 
     const startS = (index * perImageSeconds).toFixed(1);
     const endS = ((index + 1) * perImageSeconds).toFixed(1);
@@ -1514,9 +1598,16 @@ function renderTimeline() {
 
     const info = document.createElement("div");
     info.className = "timeline-info";
-    info.innerHTML = `<strong>Image ${index + 1}</strong><span>${startS}s – ${endS}s</span><p>${
+    info.innerHTML = `<strong>Image ${index + 1}</strong><span class="timeline-format"></span><span>${startS}s – ${endS}s</span><p>${
       wordsForImage || "(pas de texte associé)"
     }</p>`;
+    thumb.addEventListener("load", () => {
+      const orientation = orientationOf(thumb);
+      if (!orientation) return;
+      const tag = info.querySelector(".timeline-format");
+      tag.textContent = ORIENTATION_LABEL[orientation];
+      tag.className = `timeline-format is-${orientation}`;
+    });
 
     const controls = document.createElement("div");
     controls.className = "timeline-controls";
