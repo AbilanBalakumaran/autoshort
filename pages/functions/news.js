@@ -13,6 +13,7 @@ const ANIME_CORNER_RSS_URL = "https://animecorner.me/feed/";
 const OTAKU_USA_RSS_URL = "https://www.otakuusamagazine.com/feed";
 const ANIME_HUNCH_RSS_URL = "https://animehunch.com/feed/";
 const SILICONERA_RSS_URL = "https://www.siliconera.com/feed/";
+const ANIME_CORNER_MAX_ITEMS = 12;
 const MAX_ITEMS = 50;
 
 // ANN's "all" feed mixes in games/reviews/conventions — filter by keyword
@@ -22,15 +23,20 @@ const EXCLUDE_KEYWORDS = [
   "stage play", "live-action", "live action", " review",
   "convention", "expo", "arcade", "figure", "concert",
   "box office", "cosplay", "ranking", "this week in",
-  // Merch write-ups reach the feed tagged as anime news (a One Piece Happy
-  // Meal scores as high as a One Piece announcement otherwise), but they
-  // make poor shorts.
-  "plush", "happy meal", "gashapon", "crocs", "merch", "keychain",
 ];
 
 // Otaku USA's own categories cleanly separate reviews/interviews/features
 // from actual news — much more reliable than keyword-guessing.
 const OTAKU_USA_EXCLUDE_CATEGORIES = ["review", "interview", "feature", "kickstarter", "op-ed"];
+
+// Anime Corner tags only about half its news posts "anime news" — a One Piece
+// collaboration or a manga announcement often carries just "news" — so an
+// allow-list on that one tag silently dropped them. Excluding the handful of
+// non-news tags keeps the coverage without letting reviews in. Matched exactly,
+// not by substring: "seasonal previews" contains "review".
+const ANIME_CORNER_EXCLUDE_CATEGORIES = [
+  "review", "seasonal reviews", "interview", "editors' picks", "events",
+];
 
 // Anime Hunch tags its posts precisely, so an allow-list keeps the news and
 // drops the op-eds ("industry insights", "industry speaks") and interviews.
@@ -77,10 +83,11 @@ const EVENT_WEIGHTS = [
   [22, ["anime adaptation", "gets anime", "anime announced", "greenlit"]],
   [18, ["trailer", "teaser", "first look", "key visual", "pv "]],
   [16, ["final arc", "finale", "ends", "concludes", "last chapter", "hiatus"]],
+  [16, ["collab", "crossover"]],
   [14, ["release date", "premiere", "debuts", "returns", "confirmed"]],
   [12, ["movie", "film", "sequel", "spin-off", "spinoff", "remake"]],
   [10, ["record", "million", "best-selling", "top ", "biggest", "anniversary"]],
-  [8, ["cast", "voice actor", "studio", "director", "collab"]],
+  [8, ["cast", "voice actor", "studio", "director"]],
 ];
 
 // Signal 3 — cross-source corroboration. When several independent outlets run
@@ -207,14 +214,17 @@ async function fetchAnimeCornerNews() {
   try {
     const xml = await fetchFeedXml(ANIME_CORNER_RSS_URL);
     if (!xml) return [];
-    // Anime Corner tags each post's category in the feed itself — much
-    // more reliable than guessing from the title, and its RSS description
-    // is empty, so pull both image and a real description from the page.
-    // Capped before the per-article fetch for the same subrequest-limit
-    // reason as the ANN branch above.
+    // Anime Corner tags each post's category in the feed itself — much more
+    // reliable than guessing from the title. Its feed carries no image, so the
+    // article page is still scraped for one; that per-article fetch is what
+    // caps the list, for the same subrequest-limit reason as the ANN branch.
     const items = parseRssItems(xml)
-      .filter((item) => item.categories.includes("anime news") && !hasExcludedKeyword(item.title))
-      .slice(0, 10);
+      .filter(
+        (item) =>
+          !item.categories.some((cat) => ANIME_CORNER_EXCLUDE_CATEGORIES.includes(cat)) &&
+          !hasExcludedKeyword(item.title)
+      )
+      .slice(0, ANIME_CORNER_MAX_ITEMS);
 
     return await Promise.all(
       items.map(async (item) => {
