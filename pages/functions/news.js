@@ -25,6 +25,18 @@ const EXCLUDE_KEYWORDS = [
   "box office", "cosplay", "ranking", "this week in",
 ];
 
+// Two signals that an article is on-topic whatever else its title mentions,
+// and that therefore override the list above. Without them the filter was
+// throwing away the very stories this app exists for: a One Piece card-game
+// story or a Frieren figure reveal (a major licence), and "Manga X Gets TV
+// Anime, Live-Action Adaptation" — an anime announcement dropped for saying
+// "live-action". Coverage with no anime hook at all (Capcom's TGS line-up,
+// a Kingdom Hearts figure) still goes.
+const ANIME_ANNOUNCEMENT_SIGNALS = [
+  "tv anime", "anime adaptation", "anime series", "gets anime",
+  "anime announced", "greenlit", "new season", "final season",
+];
+
 // Otaku USA's own categories cleanly separate reviews/interviews/features
 // from actual news — much more reliable than keyword-guessing.
 const OTAKU_USA_EXCLUDE_CATEGORIES = ["review", "interview", "feature", "kickstarter", "op-ed"];
@@ -99,12 +111,21 @@ const SOURCE_CORROBORATION_WEIGHT = 20;
 // retention window on the client.
 const HOT_SCORE_THRESHOLD = 55;
 
+// "S" for the franchises whose reach dwarfs everything else, "A" for the
+// solid mid-card, null for anything unrecognised.
+function franchiseTier(haystack) {
+  if (FRANCHISES_TIER_S.some((f) => haystack.includes(f))) return "S";
+  if (FRANCHISES_TIER_A.some((f) => haystack.includes(f))) return "A";
+  return null;
+}
+
 function scoreArticle(article, sourceCount) {
   const haystack = `${article.title} ${article.description || ""}`.toLowerCase();
   let score = 0;
 
-  if (FRANCHISES_TIER_S.some((f) => haystack.includes(f))) score += 40;
-  else if (FRANCHISES_TIER_A.some((f) => haystack.includes(f))) score += 24;
+  const tier = franchiseTier(haystack);
+  if (tier === "S") score += 40;
+  else if (tier === "A") score += 24;
 
   // Only the strongest matching event type counts, so an article isn't
   // inflated just for mentioning several stock phrases.
@@ -322,6 +343,7 @@ function stripReadMore(text) {
 
 function hasExcludedKeyword(title) {
   const lower = title.toLowerCase();
+  if (franchiseTier(lower) || ANIME_ANNOUNCEMENT_SIGNALS.some((s) => lower.includes(s))) return false;
   return EXCLUDE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
