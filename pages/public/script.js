@@ -1120,6 +1120,40 @@ async function copyFromTextarea(textarea) {
   }
 }
 
+// YouTube's tag field wants one block per tag: pasting the whole
+// comma-separated line into it lands as a single run of plain text, which is
+// how it was being pasted before. Each tag therefore gets its own button that
+// copies it alone, and a copied tag dims so the list can be worked through
+// without losing one's place. The full line stays available underneath, since
+// it does paste correctly on desktop.
+function renderTagChips(container, copyAllBtn, tagsLine) {
+  const tags = tagsLine
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+  container.innerHTML = "";
+  copyAllBtn.hidden = tags.length === 0;
+  copyAllBtn.innerHTML = iconLabel("copy", `Tout copier (${tags.length} tags)`);
+  copyAllBtn.onclick = () => copyToClipboard(tags.join(", "), copyAllBtn, `Tout copier (${tags.length} tags)`);
+
+  tags.forEach((tag) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "tag-chip";
+    chip.textContent = tag;
+    chip.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(tag);
+        chip.classList.add("used");
+      } catch {
+        status.textContent = "Impossible de copier automatiquement, sélectionne le texte manuellement.";
+      }
+    });
+    container.appendChild(chip);
+  });
+}
+
 async function copyToClipboard(text, btn, label) {
   try {
     await navigator.clipboard.writeText(text);
@@ -3042,7 +3076,8 @@ function openPublishPanel(item, host) {
   const coverDownload = panel.querySelector(".publish-cover-download");
   const seoTitles = panel.querySelector(".publish-titles");
   const seoDescription = panel.querySelector(".publish-seo-description");
-  const seoTags = panel.querySelector(".publish-seo-tags");
+  const seoTags = panel.querySelector(".publish-tags");
+  const seoTagsAll = panel.querySelector(".publish-tags-all");
   const nowToggle = panel.querySelector(".publish-now");
   const scheduleWrap = panel.querySelector(".publish-schedule");
   const dateInput = panel.querySelector(".publish-date");
@@ -3078,9 +3113,8 @@ function openPublishPanel(item, host) {
 
   // Every SEO field copies on click, no buttons.
   seoDescription.value = item.description || "";
-  seoTags.value = item.tags || "";
   seoDescription.addEventListener("click", () => copyFromTextarea(seoDescription));
-  seoTags.addEventListener("click", () => copyFromTextarea(seoTags));
+  renderTagChips(seoTags, seoTagsAll, item.tags || "");
 
   seoTitles.innerHTML = "";
   const allTitles = item.titles?.length ? item.titles : [item.title].filter(Boolean);

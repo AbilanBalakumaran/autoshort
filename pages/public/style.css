@@ -889,6 +889,51 @@ label {
   pointer-events: none;
 }
 
+/* Mirrors YouTube's own tag chips, so what is on screen matches what has to
+   end up in the field over there — one block per tag. */
+.tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+
+.tag-chip {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #333;
+  background: #1c1c1c;
+  color: #f0f0f5;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+
+@media (hover: hover) {
+  .tag-chip:hover {
+    border-color: rgba(230, 57, 70, 0.7);
+  }
+}
+
+/* Dimmed once copied, so a long list can be worked through without losing
+   track of where one got to. */
+.tag-chip.used {
+  opacity: 0.45;
+  border-color: rgba(74, 222, 128, 0.6);
+}
+
+.tag-chip.used::after {
+  content: " ✓";
+  color: #86efac;
+}
+
+.tags-copy-all {
+  width: 100%;
+  background: #333;
+  margin-bottom: 4px;
+}
+
 .copy-hint {
   color: #777;
   font-size: 0.78rem;
