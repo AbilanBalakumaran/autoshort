@@ -1973,6 +1973,10 @@ async function generateMontage() {
     montageBtn.disabled = false;
     isGenerating = false;
     releaseAwake();
+    // Belt and braces: the preview is normally cleared by stopRecording(), but
+    // a throw anywhere in the pipeline would otherwise leave it on screen.
+    montageCanvas.classList.remove("recording");
+    montageCanvas.hidden = true;
   }
 }
 
@@ -2362,7 +2366,18 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
     const dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
 
+    // captureStream() on a display:none canvas can deliver no frames at all on
+    // Safari — the recording then ends with zero bytes and zero chunks. The
+    // canvas is therefore genuinely rendered while recording, small and
+    // centred, which doubles as a live preview of the montage being built.
+    // The attribute has to go, not just be overridden: the app's own
+    // `[hidden] { display: none !important }` rule keeps the element out of
+    // the render tree whatever else the stylesheet says.
+    montageCanvas.hidden = false;
+    montageCanvas.classList.add("recording");
+
     const videoStream = montageCanvas.captureStream(30);
+    const videoTrack = videoStream.getVideoTracks()[0];
     const audioTracks = dest.stream.getAudioTracks();
     log(
       `Flux capturé : ${videoStream.getVideoTracks().length} piste vidéo, ${audioTracks.length} piste audio`
@@ -2405,13 +2420,22 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
       // surfacing that is far more useful than handing the page a video
       // element that just shows a broken play button.
       if (blob.size < 10000) {
-        reject(new Error(`enregistrement vide (${blob.size} octets, ${chunks.length} morceau(x))`));
+        log(`Enregistrement vide : ${blob.size} octets, ${chunks.length} morceau(x) — ${recordingState()}`);
+        reject(
+          new Error(
+            framesDrawn === 0
+              ? "aucune image n'a pu être capturée — laisse l'app au premier plan pendant le rendu, puis relance le montage"
+              : `le navigateur n'a rien encodé (${blob.size} octets sur ${framesDrawn} images) — laisse l'app à l'écran pendant le rendu, puis relance le montage`
+          )
+        );
         return;
       }
       resolve({ blob, isMp4 });
     };
     recorder.onerror = (e) => {
       clearTimeout(safetyTimer);
+      montageCanvas.classList.remove("recording");
+      montageCanvas.hidden = true;
       reject(e.error || new Error("Erreur d'enregistrement"));
     };
 
@@ -2431,10 +2455,28 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
     const startAt = audioCtx.currentTime + 0.08;
     const wallStart = performance.now() + 80;
 
+    let framesDrawn = 0;
+
     function stopRecording() {
       cancelAnimationFrame(rafId);
       clearTimeout(safetyTimer);
+      montageCanvas.classList.remove("recording");
+      montageCanvas.hidden = true;
       if (recorder.state !== "inactive") recorder.stop();
+    }
+
+    // Everything that was silent when a recording came back empty. Logged on
+    // the two paths that can end badly, so the cause is readable from the log
+    // instead of having to be guessed at.
+    function recordingState() {
+      return [
+        `frames=${framesDrawn}`,
+        `horloge audio=${Math.round((audioCtx.currentTime - startAt) * 1000)}ms`,
+        `horloge murale=${Math.round(performance.now() - wallStart)}ms`,
+        `contexte=${audioCtx.state}`,
+        `recorder=${recorder.state}`,
+        `piste vidéo=${videoTrack ? `${videoTrack.readyState}${videoTrack.muted ? " (muette)" : ""}` : "absente"}`,
+      ].join(", ");
     }
 
     // Last-resort guard: if the audio clock is still stuck for any reason
@@ -2442,7 +2484,7 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
     // draw loop would otherwise spin forever and no file would come out.
     // Forcing a stop well past the expected end always yields a video.
     safetyTimer = setTimeout(() => {
-      log("Fin non détectée par l'horloge audio — arrêt forcé de l'enregistrement");
+      log(`Fin non détectée — arrêt forcé de l'enregistrement (${recordingState()})`);
       stopRecording();
     }, durationMs + 5000);
 
@@ -2450,17 +2492,25 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
       // Prefer the audio clock (keeps subtitles locked to the voice), but fall
       // back to the wall clock if the context never actually started running,
       // so the recording always terminates.
-      const elapsed =
-        audioCtx.state === "running"
-          ? (audioCtx.currentTime - startAt) * 1000
-          : performance.now() - wallStart;
+      const audioElapsed = (audioCtx.currentTime - startAt) * 1000;
+      const wallElapsed = performance.now() - wallStart;
+
+      // Subtitles stay on the audio clock so they cannot drift from the voice.
+      const syncElapsed = audioCtx.state === "running" ? audioElapsed : wallElapsed;
+
+      // Termination, though, takes whichever clock has got furthest. On iOS the
+      // audio clock can stall mid-recording while still reporting "running" —
+      // the loop then spun until the safety timer fired five seconds late, and
+      // the file came back empty. Neither clock alone can hang it now.
+      const elapsed = Math.max(audioElapsed, wallElapsed);
       // Small tail so MediaRecorder never clips the final word's audio.
       if (elapsed >= durationMs + 150) {
         stopRecording();
         return;
       }
 
-      const t = Math.min(Math.max(0, elapsed), durationMs);
+      framesDrawn++;
+      const t = Math.min(Math.max(0, syncElapsed), durationMs);
       drawMontageFrameAt(
         ctx, images, t, durationMs, subtitleWords, timingsMs, bgCache,
         montageCanvas.width, montageCanvas.height

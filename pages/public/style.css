@@ -784,8 +784,22 @@ label {
   background: linear-gradient(135deg, #C1121F, #E63946);
 }
 
+/* Out of the layout when idle, but genuinely rendered while recording:
+   captureStream() on a display:none canvas can deliver no frames at all on
+   Safari, and the recording then comes back with zero bytes. Being visible
+   also turns it into a live preview of the montage being built. */
 #montage-canvas {
   display: none;
+}
+
+#montage-canvas.recording {
+  display: block;
+  width: 150px;
+  max-width: 45%;
+  height: auto;
+  margin: 14px auto;
+  border-radius: 10px;
+  border: 1px solid #333;
 }
 
 #debug-log {
