@@ -9,6 +9,8 @@ import {
   replaceVoiceScript,
   applyDuration,
   currentDateNote,
+  findStrayYears,
+  stripYears,
   wordRangeForDuration,
   countWords,
   json,
@@ -40,6 +42,18 @@ export async function onRequestPost({ request, env }) {
 
   let voiceScript = extractVoiceScript(videoPrompt);
 
+  // The model sometimes invents a year for "this year". One targeted rewrite
+  // first, before the length check so the word count is enforced on the
+  // corrected text.
+  let strayYears = findStrayYears(voiceScript, text);
+  if (voiceScript && strayYears.length) {
+    const rewritten = await fixStrayYears(env, voiceScript, strayYears);
+    if (rewritten) {
+      voiceScript = rewritten;
+      videoPrompt = replaceVoiceScript(videoPrompt, voiceScript);
+    }
+  }
+
   for (let attempt = 0; attempt < 2; attempt++) {
     const count = countWords(voiceScript);
     if (!voiceScript || count >= minWords && count <= maxWords) break;
@@ -48,6 +62,13 @@ export async function onRequestPost({ request, env }) {
     if (!fixed) break;
 
     voiceScript = fixed;
+    videoPrompt = replaceVoiceScript(videoPrompt, voiceScript);
+  }
+
+  // Final guard, independent of the model: anything still wrong is removed.
+  strayYears = findStrayYears(voiceScript, text);
+  if (voiceScript && strayYears.length) {
+    voiceScript = stripYears(voiceScript, strayYears);
     videoPrompt = replaceVoiceScript(videoPrompt, voiceScript);
   }
 
@@ -89,6 +110,16 @@ async function fixVoiceScript(env, voiceScript, minWords, maxWords) {
   const fixSystemPrompt = `${currentDateNote()}\n\nYou rewrite a narration sentence so it has between ${minWords} and ${maxWords} words (never fewer than ${minWords}, never more than ${maxWords}). Keep the same meaning, energetic anime-news-narrator tone, one continuous sentence with natural comma pauses at clause breaks and a final period (needed for correct text-to-speech pacing and subtitle timing). If it's too short, add natural context or color to reach the target length. Output ONLY the rewritten sentence, no quotes, no explanations.`;
 
   const { content } = await callGroq(env, fixSystemPrompt, voiceScript, 0.5);
+  if (!content) return null;
+  return content.trim().replace(/^"|"$/g, "");
+}
+
+async function fixStrayYears(env, voiceScript, years) {
+  const prompt = `${currentDateNote()}
+
+You rewrite a narration sentence to remove wrong years. The year(s) ${years.join(", ")} appear in the sentence but not in the original news, so they are wrong. If the sentence meant "this year", write "this year" instead. Keep everything else, the same energetic anime-news-narrator tone, the same length within two words, one continuous sentence with natural comma pauses and a final period. Output ONLY the rewritten sentence, no quotes, no explanations.`;
+
+  const { content } = await callGroq(env, prompt, voiceScript, 0.3);
   if (!content) return null;
   return content.trim().replace(/^"|"$/g, "");
 }
