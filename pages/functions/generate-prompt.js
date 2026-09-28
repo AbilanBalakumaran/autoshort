@@ -123,3 +123,4 @@ You rewrite a narration sentence to remove wrong years. The year(s) ${years.join
   if (!content) return null;
   return content.trim().replace(/^"|"$/g, "");
 }
+
