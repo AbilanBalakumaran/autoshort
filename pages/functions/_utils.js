@@ -139,6 +139,22 @@ export function wordRangeForDuration(duration) {
   return { seconds, minWords, maxWords, targetWords };
 }
 
+// The model has no clock: it answers from its training data, so without this
+// it assumes a past year (it was writing 2024 in 2026) and every date-based
+// sentence in the script ends up wrong. The real date is computed on each
+// request, in Paris time since that is where the channel operates, and
+// placed in front of the instructions.
+export function currentDateNote() {
+  const now = new Date();
+  const fmt = (options) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Paris", ...options }).format(now);
+  const longDate = fmt({ weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const year = fmt({ year: "numeric" });
+
+  return `CURRENT DATE: today is ${longDate}. The current year is ${year}.
+You have no clock, so rely on this date and never on your training data. Never assume it is an earlier year. Words like "today", "this year" or "next month" in the news are relative to this date. If the news text states its own dates or years, use them exactly as written and never change or "correct" them.`;
+}
+
 export function applyDuration(template, duration) {
   const { seconds, minWords, maxWords, targetWords } = wordRangeForDuration(duration);
   return template
