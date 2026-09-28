@@ -152,7 +152,40 @@ export function currentDateNote() {
   const year = fmt({ year: "numeric" });
 
   return `CURRENT DATE: today is ${longDate}. The current year is ${year}.
-You have no clock, so rely on this date and never on your training data. Never assume it is an earlier year. Words like "today", "this year" or "next month" in the news are relative to this date. If the news text states its own dates or years, use them exactly as written and never change or "correct" them.`;
+You have no clock, so rely on this date and never on your training data. Never assume it is an earlier year. Words like "today", "this year" or "next month" in the news are relative to this date. If the news text states its own dates or years, use them exactly as written and never change or "correct" them. Only write a year if it appears in the news text or is the current year. When the news says "this year", write "this year" or the current year, never any other number.`;
+}
+
+const YEAR_PATTERN = /\b(?:19|20)\d{2}\b/g;
+
+// Years the model wrote that it had no reason to write: not in the news text
+// and not the current year. This is the signature of the model filling in
+// "this year" from its own outdated idea of the date.
+export function findStrayYears(script, sourceText) {
+  const currentYear = String(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Paris", year: "numeric" }).format(new Date())
+  );
+  const allowed = new Set(sourceText.match(YEAR_PATTERN) || []);
+  allowed.add(currentYear);
+  return [...new Set(script.match(YEAR_PATTERN) || [])].filter((year) => !allowed.has(year));
+}
+
+// Last-resort guard, no model involved: removes the stray years, with the
+// small preposition in front of them, and tidies the spacing and commas left
+// behind. A script that just omits a year is far better than one that states
+// a wrong one.
+export function stripYears(script, years) {
+  let out = script;
+  for (const year of years) {
+    out = out.replace(
+      new RegExp(`(?:\\b(?:in|during|for|by|since|from)\\s+)?\\b${year}\\b`, "gi"),
+      ""
+    );
+  }
+  return out
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .replace(/,\s*,/g, ",")
+    .trim();
 }
 
 export function applyDuration(template, duration) {
