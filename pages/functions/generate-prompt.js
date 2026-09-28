@@ -8,6 +8,7 @@ import {
   extractRealEntities,
   replaceVoiceScript,
   applyDuration,
+  currentDateNote,
   wordRangeForDuration,
   countWords,
   json,
@@ -26,7 +27,9 @@ export async function onRequestPost({ request, env }) {
   }
 
   const rawTemplate = template && template.trim() ? template : SYSTEM_PROMPT;
-  const systemPrompt = applyDuration(rawTemplate, duration);
+  // Added here rather than inside SYSTEM_PROMPT so it also applies when the
+  // user has saved a custom template in the settings.
+  const systemPrompt = `${currentDateNote()}\n\n${applyDuration(rawTemplate, duration)}`;
   const { minWords, maxWords } = wordRangeForDuration(duration);
 
   const first = await callGroq(env, systemPrompt, text);
@@ -83,7 +86,7 @@ async function callGroq(env, systemPrompt, userText, temperature = 0.7) {
 }
 
 async function fixVoiceScript(env, voiceScript, minWords, maxWords) {
-  const fixSystemPrompt = `You rewrite a narration sentence so it has between ${minWords} and ${maxWords} words (never fewer than ${minWords}, never more than ${maxWords}). Keep the same meaning, energetic anime-news-narrator tone, one continuous sentence with natural comma pauses at clause breaks and a final period (needed for correct text-to-speech pacing and subtitle timing). If it's too short, add natural context or color to reach the target length. Output ONLY the rewritten sentence, no quotes, no explanations.`;
+  const fixSystemPrompt = `${currentDateNote()}\n\nYou rewrite a narration sentence so it has between ${minWords} and ${maxWords} words (never fewer than ${minWords}, never more than ${maxWords}). Keep the same meaning, energetic anime-news-narrator tone, one continuous sentence with natural comma pauses at clause breaks and a final period (needed for correct text-to-speech pacing and subtitle timing). If it's too short, add natural context or color to reach the target length. Output ONLY the rewritten sentence, no quotes, no explanations.`;
 
   const { content } = await callGroq(env, fixSystemPrompt, voiceScript, 0.5);
   if (!content) return null;
