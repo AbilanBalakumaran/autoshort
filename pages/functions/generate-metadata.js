@@ -1,4 +1,4 @@
-import { GROQ_MODEL, json, corsHeaders } from "./_utils.js";
+import { GROQ_MODEL, currentDateNote, json, corsHeaders } from "./_utils.js";
 
 export async function onRequestOptions() {
   return new Response(null, { headers: corsHeaders() });
@@ -42,7 +42,7 @@ export async function onRequestPost({ request, env }) {
       model: GROQ_MODEL,
       temperature: 0.8,
       messages: [
-        { role: "system", content: METADATA_SYSTEM_PROMPT },
+        { role: "system", content: `${currentDateNote()}\n\n${METADATA_SYSTEM_PROMPT}` },
         { role: "user", content: text },
       ],
     }),
