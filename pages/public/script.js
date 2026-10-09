@@ -2433,14 +2433,9 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
       resolve({ blob, isMp4 });
     };
     recorder.onerror = (e) => {
-      // A spontaneous recorder error — as opposed to the normal end-of-clip
-      // path — never used to cancel the draw loop, which kept calling
-      // requestAnimationFrame on a canvas no one was recording from anymore.
-      cancelAnimationFrame(rafId);
       clearTimeout(safetyTimer);
       montageCanvas.classList.remove("recording");
       montageCanvas.hidden = true;
-      releaseRecordingResources();
       reject(e.error || new Error("Erreur d'enregistrement"));
     };
 
@@ -2461,35 +2456,12 @@ async function renderMontageRealtime(images, audioBuffer, subtitleText, wordTimi
     const wallStart = performance.now() + 80;
 
     let framesDrawn = 0;
-    let cleaned = false;
-
-    // Nothing in this function used to release what it allocated: the
-    // MediaStreamDestination node, its audio track, and the canvas's capture
-    // video track all stayed alive forever, on every single montage — success
-    // or failure. iOS counts those live tracks against a per-page media
-    // budget that a closed AudioContext does not free. A handful of montages
-    // in one session exhausts it, and the next recording gets a context that
-    // still reports "running" while its clock is actually frozen solid —
-    // which is exactly the symptom this was diagnosed from. Called from every
-    // exit path (normal end, the safety timeout, and a recorder error) and
-    // made idempotent since more than one of those can fire.
-    function releaseRecordingResources() {
-      if (cleaned) return;
-      cleaned = true;
-      try { source.stop(); } catch { /* already ended */ }
-      try { source.disconnect(); } catch { /* already disconnected */ }
-      try { dest.disconnect(); } catch { /* already disconnected */ }
-      combinedStream.getTracks().forEach((track) => {
-        try { track.stop(); } catch { /* already stopped */ }
-      });
-    }
 
     function stopRecording() {
       cancelAnimationFrame(rafId);
       clearTimeout(safetyTimer);
       montageCanvas.classList.remove("recording");
       montageCanvas.hidden = true;
-      releaseRecordingResources();
       if (recorder.state !== "inactive") recorder.stop();
     }
 
